@@ -77,14 +77,22 @@ function extractStatus(obj) {
  */
 export async function generateSong({ title, lyrics, style_tags }, onProgress = () => {}) {
   const cfg = await getConfig();
-  const BASE_URL = cfg.sunoBaseUrl;
+  const BASE_URL = (cfg.sunoBaseUrl || '').replace(/\/$/, '');
   const API_KEY = cfg.sunoApiKey;
+  const MODE = cfg.sunoMode || 'suno-api';
+  if (!BASE_URL) throw new Error('Suno base URL not set (Settings > Song)');
+
+  // gcui-art/suno-api (self-hosted with your own Suno Pro cookie) is the
+  // default. The "generic" mode keeps the older submit->poll(status) shape
+  // for paid third-party wrappers.
+  if (MODE === 'suno-api') {
+    return generateSongSunoApi(BASE_URL, API_KEY, { title, lyrics, style_tags }, onProgress);
+  }
+
+  if (!API_KEY) throw new Error('Suno provider key not set (Settings > Song)');
   const SUBMIT_PATH = cfg.sunoSubmitPath || '/api/generate';
   const STATUS_PATH = cfg.sunoStatusPath || '/api/status';
   const MODEL = cfg.sunoModel || 'chirp-v3-5';
-  if (!BASE_URL || !API_KEY) {
-    throw new Error('Suno provider URL/key not set (Settings > Song)');
-  }
 
   // 1) Submit. This body covers the most common wrapper shapes; tweak to
   //    your provider if needed.
@@ -157,4 +165,76 @@ export async function generateSong({ title, lyrics, style_tags }, onProgress = (
   }
 
   throw new Error('Suno generation timed out before an audio URL was ready');
+}
+
+// ---------------------------------------------------------------------------
+// gcui-art/suno-api adapter (self-hosted; uses your own Suno Pro cookie)
+// Endpoints:
+//   POST /api/custom_generate  { prompt(lyrics), tags, title, make_instrumental,
+//                                wait_audio }  -> [ { id, audio_url, status }, ... ]
+//   GET  /api/get?ids=a,b       -> [ { id, audio_url, status }, ... ]
+// status: submitted | queued | streaming | complete | error
+// (audio_url is usually playable once status is "streaming".)
+// ---------------------------------------------------------------------------
+async function generateSongSunoApi(base, apiKey, { title, lyrics, style_tags }, onProgress) {
+  const headers = { 'Content-Type': 'application/json' };
+  // Optional: only if the user put an auth proxy in front of suno-api.
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  const submitRes = await fetch(`${base}/api/custom_generate`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      prompt: lyrics, // custom_generate uses `prompt` as the lyrics
+      tags: style_tags,
+      title,
+      make_instrumental: false,
+      wait_audio: false,
+    }),
+  });
+
+  if (!submitRes.ok) {
+    const body = await submitRes.text().catch(() => '');
+    throw new Error(
+      `suno-api /api/custom_generate failed (${submitRes.status}). ` +
+        `Is the wrapper deployed and SUNO_COOKIE valid? ${body.slice(0, 400)}`
+    );
+  }
+
+  const clips = await submitRes.json();
+  const ids = (Array.isArray(clips) ? clips : [])
+    .map((c) => c && c.id)
+    .filter(Boolean);
+  if (ids.length === 0) {
+    throw new Error(
+      `suno-api returned no clip ids: ${JSON.stringify(clips).slice(0, 400)}`
+    );
+  }
+
+  const idsParam = encodeURIComponent(ids.join(','));
+  for (let i = 0; i < MAX_POLLS; i++) {
+    await sleep(POLL_INTERVAL_MS);
+    const r = await fetch(`${base}/api/get?ids=${idsParam}`, { headers });
+    if (!r.ok) {
+      onProgress(`get ${i + 1} -> ${r.status}, retrying`);
+      continue;
+    }
+    const arr = await r.json();
+    const list = Array.isArray(arr) ? arr : [];
+    const ready = list.find(
+      (c) =>
+        c &&
+        typeof c.audio_url === 'string' &&
+        /^https?:\/\//.test(c.audio_url) &&
+        ['streaming', 'complete'].includes(String(c.status || '').toLowerCase())
+    );
+    onProgress(`poll ${i + 1}/${MAX_POLLS} statuses=${list.map((c) => c.status).join('/')}`);
+    if (ready) {
+      return { audioUrl: ready.audio_url, providerJobId: ready.id, raw: ready };
+    }
+    if (list.length && list.every((c) => String(c.status || '').toLowerCase() === 'error')) {
+      throw new Error('suno-api reported error status for all clips (cookie expired or captcha?)');
+    }
+  }
+  throw new Error('suno-api timed out before an audio URL was ready');
 }

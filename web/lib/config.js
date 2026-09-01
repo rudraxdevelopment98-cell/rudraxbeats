@@ -21,12 +21,13 @@ export const FIELDS = {
   openaiModel: { env: 'OPENAI_MODEL', default: 'gpt-4o-mini', label: 'OpenAI Model', group: 'Lyrics (OpenAI)' },
   openaiBaseUrl: { env: 'OPENAI_BASE_URL', default: 'https://api.openai.com/v1', label: 'OpenAI Base URL', group: 'Lyrics (OpenAI)' },
 
-  // Song (third-party Suno wrapper)
-  sunoBaseUrl: { env: 'SUNO_PROVIDER_BASE_URL', label: 'Suno Provider Base URL', group: 'Song (Suno wrapper)' },
-  sunoApiKey: { env: 'SUNO_PROVIDER_API_KEY', secret: true, label: 'Suno Provider API Key', group: 'Song (Suno wrapper)' },
-  sunoSubmitPath: { env: 'SUNO_SUBMIT_PATH', default: '/api/generate', label: 'Suno Submit Path', group: 'Song (Suno wrapper)' },
-  sunoStatusPath: { env: 'SUNO_STATUS_PATH', default: '/api/status', label: 'Suno Status Path', group: 'Song (Suno wrapper)' },
-  sunoModel: { env: 'SUNO_MODEL', default: 'chirp-v3-5', label: 'Suno Model', group: 'Song (Suno wrapper)' },
+  // Song (Suno). Default mode = self-hosted gcui-art/suno-api (your Pro cookie).
+  sunoBaseUrl: { env: 'SUNO_PROVIDER_BASE_URL', label: 'Suno wrapper URL (your deployed suno-api)', group: 'Song (Suno)' },
+  sunoMode: { env: 'SUNO_MODE', default: 'suno-api', label: 'Mode (suno-api = self-host, generic = paid wrapper)', group: 'Song (Suno)' },
+  sunoApiKey: { env: 'SUNO_PROVIDER_API_KEY', secret: true, label: 'API Key (optional for self-host)', group: 'Song (Suno)' },
+  sunoSubmitPath: { env: 'SUNO_SUBMIT_PATH', default: '/api/generate', label: 'Submit Path (generic mode only)', group: 'Song (Suno)' },
+  sunoStatusPath: { env: 'SUNO_STATUS_PATH', default: '/api/status', label: 'Status Path (generic mode only)', group: 'Song (Suno)' },
+  sunoModel: { env: 'SUNO_MODEL', default: 'chirp-v3-5', label: 'Model (generic mode only)', group: 'Song (Suno)' },
 
   // Thumbnail (Gemini)
   geminiApiKey: { env: 'GEMINI_API_KEY', secret: true, label: 'Gemini API Key', group: 'Thumbnail (Gemini)' },
@@ -159,7 +160,8 @@ export async function getReadiness() {
   const c = await getConfig();
   return {
     lyrics: Boolean(c.openaiApiKey),
-    song: Boolean(c.sunoBaseUrl && c.sunoApiKey),
+    // self-host (suno-api) needs only the wrapper URL; generic mode needs a key too
+    song: Boolean(c.sunoBaseUrl) && (c.sunoMode === 'suno-api' ? true : Boolean(c.sunoApiKey)),
     thumbnail: Boolean(c.geminiApiKey),
     video: Boolean(c.workerUrl && c.workerSecret),
     upload: Boolean(c.ytClientId && c.ytClientSecret && c.ytRefreshToken),
