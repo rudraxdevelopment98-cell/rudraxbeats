@@ -1,0 +1,8 @@
+node_modules
+output
+tmp
+*.mp4
+*.mp3
+*.log
+.env
+.env.local

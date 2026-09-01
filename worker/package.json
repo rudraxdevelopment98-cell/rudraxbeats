@@ -1,0 +1,20 @@
+{
+  "name": "ai-song-engine-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Always-on ffmpeg render worker for the AI song engine",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@vercel/blob": "^0.27.0",
+    "express": "^4.21.2",
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  }
+}

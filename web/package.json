@@ -1,0 +1,27 @@
+{
+  "name": "ai-song-engine-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web dashboard + API + cron for the AI song YouTube automation engine",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "get-refresh-token": "node scripts/get-refresh-token.js"
+  },
+  "dependencies": {
+    "@vercel/kv": "^2.0.0",
+    "googleapis": "^144.0.0",
+    "next": "14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.35"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  }
+}
