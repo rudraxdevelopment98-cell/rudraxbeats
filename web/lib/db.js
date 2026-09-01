@@ -9,9 +9,17 @@
 // If KV env vars are missing we fall back to a tiny in-memory store so the
 // app still boots for local dev (state is NOT persisted across restarts).
 
-import { kv as vercelKv } from '@vercel/kv';
+import { createClient } from '@vercel/kv';
 
-const HAS_KV = Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+// Vercel now provisions KV via the Upstash Marketplace, which may inject the
+// credentials under either the KV_REST_API_* names (native/compat) or the
+// UPSTASH_REDIS_REST_* names. Accept whichever pair is present so "attach a
+// KV store" works regardless of the exact env var names Vercel uses.
+const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+
+const HAS_KV = Boolean(KV_URL && KV_TOKEN);
+const vercelKv = HAS_KV ? createClient({ url: KV_URL, token: KV_TOKEN }) : null;
 
 // --- in-memory fallback (dev only) -----------------------------------------
 const mem = {
