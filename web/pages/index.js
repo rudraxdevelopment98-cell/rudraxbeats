@@ -57,6 +57,7 @@ function JobCard({ job }) {
 export default function Home() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [user, setUser] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [schedule, setSchedule] = useState({ enabled: false, hour: 14, minute: 0 });
   const [readiness, setReadiness] = useState(null);
@@ -110,6 +111,7 @@ export default function Home() {
           router.replace('/login');
           return;
         }
+        setUser(d.user || null);
         setReady(true);
         loadJobs();
         loadSchedule();
@@ -176,6 +178,7 @@ export default function Home() {
           </div>
         </div>
         <div className="row">
+          {user ? <span className="meta">{user.email}</span> : null}
           <Link href="/settings" className="navlink">⚙️ Settings</Link>
           <button className="secondary" onClick={logout}>Log out</button>
         </div>

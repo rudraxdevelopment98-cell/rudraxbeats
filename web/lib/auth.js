@@ -1,29 +1,33 @@
 // lib/auth.js
-// Minimal single-admin auth for the dashboard so the Settings page (which
-// holds API keys) isn't world-readable.
+// Google-based auth for the dashboard + an email allowlist for sharing access.
 //
-//  - First visit with no password set  -> "setup" mode: the user creates one.
-//  - Password is stored as a scrypt hash + salt in KV (never in plaintext).
-//  - Login issues an HMAC-signed, httpOnly session cookie.
-//  - A random session-signing secret is generated on setup and kept in KV.
+//  - Login is "Sign in with Google" (GSI). The browser gets an ID token (JWT),
+//    the server verifies it against GOOGLE_CLIENT_ID (public, an env var so it
+//    exists before anyone logs in), and issues an HMAC-signed session cookie.
+//  - Access control: the FIRST person to sign in becomes the owner (stored in
+//    KV). The owner can add/remove other Google emails from the Settings page.
+//    Only the owner + allowed emails may log in.
 //
-// This is deliberately lightweight (one admin, no user table) - appropriate
-// for a personal automation dashboard.
+// No passwords. The session-signing secret lives in KV.
 
 import crypto from 'crypto';
+import { google } from 'googleapis';
 import { kvStore } from './db.js';
 
-const PW_HASH_KEY = 'auth:passwordHash';
-const PW_SALT_KEY = 'auth:passwordSalt';
 const SECRET_KEY = 'auth:sessionSecret';
+const ACCESS_KEY = 'access';
 const COOKIE_NAME = 'ase_session';
 const SESSION_TTL_SEC = 60 * 60 * 24 * 7; // 7 days
-
 const isProd = process.env.NODE_ENV === 'production';
 
-function scryptHash(password, saltHex) {
-  return crypto.scryptSync(String(password), Buffer.from(saltHex, 'hex'), 64).toString('hex');
+export function getGoogleClientId() {
+  return process.env.GOOGLE_CLIENT_ID || '';
 }
+export function loginConfigured() {
+  return Boolean(getGoogleClientId());
+}
+
+const norm = (e) => String(e || '').trim().toLowerCase();
 
 async function getSessionSecret() {
   let s = await kvStore.get(SECRET_KEY);
@@ -34,43 +38,80 @@ async function getSessionSecret() {
   return s;
 }
 
-/** @returns {Promise<{setup: boolean}>} setup=true means a password exists. */
-export async function getAuthState() {
-  const hash = await kvStore.get(PW_HASH_KEY);
-  return { setup: Boolean(hash) };
+// --- access list -----------------------------------------------------------
+
+export async function getAccess() {
+  const a = await kvStore.get(ACCESS_KEY);
+  return {
+    ownerEmail: a?.ownerEmail || null,
+    allowed: Array.isArray(a?.allowed) ? a.allowed : [],
+  };
 }
 
-/** Create the initial admin password. Throws if one already exists. */
-export async function setupPassword(password) {
-  if (!password || String(password).length < 6) {
-    throw new Error('Password must be at least 6 characters.');
+async function saveAccess(a) {
+  await kvStore.set(ACCESS_KEY, a);
+  return a;
+}
+
+/** First login claims ownership. */
+export async function ensureOwner(email) {
+  const a = await getAccess();
+  if (!a.ownerEmail) {
+    a.ownerEmail = norm(email);
+    await saveAccess(a);
   }
-  const { setup } = await getAuthState();
-  if (setup) throw new Error('Password already set.');
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = scryptHash(password, salt);
-  await kvStore.set(PW_SALT_KEY, salt);
-  await kvStore.set(PW_HASH_KEY, hash);
-  await getSessionSecret(); // ensure a signing secret exists
-  return true;
+  return getAccess();
 }
 
-export async function verifyPassword(password) {
-  const [hash, salt] = await Promise.all([
-    kvStore.get(PW_HASH_KEY),
-    kvStore.get(PW_SALT_KEY),
-  ]);
-  if (!hash || !salt) return false;
-  const attempt = scryptHash(password || '', salt);
-  const a = Buffer.from(attempt, 'hex');
-  const b = Buffer.from(hash, 'hex');
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+export async function isAllowed(email) {
+  const e = norm(email);
+  const a = await getAccess();
+  if (!a.ownerEmail) return true; // nobody yet -> first login allowed
+  return e === a.ownerEmail || a.allowed.map(norm).includes(e);
+}
+
+export async function isOwner(email) {
+  const a = await getAccess();
+  return Boolean(a.ownerEmail) && norm(email) === a.ownerEmail;
+}
+
+export async function addAllowed(email) {
+  const e = norm(email);
+  if (!e || !e.includes('@')) throw new Error('Enter a valid email.');
+  const a = await getAccess();
+  if (e !== a.ownerEmail && !a.allowed.map(norm).includes(e)) a.allowed.push(e);
+  await saveAccess(a);
+  return getAccess();
+}
+
+export async function removeAllowed(email) {
+  const e = norm(email);
+  const a = await getAccess();
+  a.allowed = a.allowed.filter((x) => norm(x) !== e);
+  await saveAccess(a);
+  return getAccess();
+}
+
+// --- Google ID token verification ------------------------------------------
+
+export async function verifyGoogleIdToken(idToken) {
+  const cid = getGoogleClientId();
+  if (!cid) throw new Error('GOOGLE_CLIENT_ID is not set on the server.');
+  const client = new google.auth.OAuth2(cid);
+  const ticket = await client.verifyIdToken({ idToken, audience: cid });
+  const p = ticket.getPayload();
+  if (!p || !p.email) throw new Error('Google token had no email.');
+  if (!p.email_verified) throw new Error('This Google email is not verified.');
+  return { email: p.email, name: p.name || p.email, picture: p.picture || null };
 }
 
 // --- session tokens --------------------------------------------------------
 
 function b64url(buf) {
   return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64urlDecode(s) {
+  return Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString();
 }
 
 async function signToken(payload) {
@@ -89,7 +130,7 @@ async function verifyToken(token) {
   const b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   try {
-    const payload = JSON.parse(Buffer.from(body.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+    const payload = JSON.parse(b64urlDecode(body));
     if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
     return payload;
   } catch (_) {
@@ -107,14 +148,19 @@ function parseCookies(req) {
   return out;
 }
 
-export async function issueSession(res) {
+export async function issueSession(res, user) {
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SEC;
-  const token = await signToken({ exp });
+  const token = await signToken({
+    exp,
+    email: norm(user.email),
+    name: user.name || '',
+    picture: user.picture || '',
+  });
   const parts = [
     `${COOKIE_NAME}=${token}`,
     'Path=/',
     'HttpOnly',
-    'SameSite=Strict',
+    'SameSite=Lax',
     `Max-Age=${SESSION_TTL_SEC}`,
   ];
   if (isProd) parts.push('Secure');
@@ -122,24 +168,36 @@ export async function issueSession(res) {
 }
 
 export function clearSession(res) {
-  const parts = [`${COOKIE_NAME}=`, 'Path=/', 'HttpOnly', 'SameSite=Strict', 'Max-Age=0'];
+  const parts = [`${COOKIE_NAME}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0'];
   if (isProd) parts.push('Secure');
   res.setHeader('Set-Cookie', parts.join('; '));
 }
 
-/** @returns {Promise<boolean>} true if the request carries a valid session. */
-export async function isAuthed(req) {
+/** @returns {Promise<{email,name,picture,exp}|null>} */
+export async function getSession(req) {
   const cookies = parseCookies(req);
-  const payload = await verifyToken(cookies[COOKIE_NAME]);
-  return Boolean(payload);
+  return verifyToken(cookies[COOKIE_NAME]);
 }
 
-/**
- * Guard for API routes. Returns true if authed; otherwise writes 401 and
- * returns false (caller should `return`).
- */
+export async function isAuthed(req) {
+  return Boolean(await getSession(req));
+}
+
+/** Returns the session (truthy) or writes 401 and returns null. */
 export async function requireAuth(req, res) {
-  if (await isAuthed(req)) return true;
+  const s = await getSession(req);
+  if (s) return s;
   res.status(401).json({ error: 'Not authenticated' });
-  return false;
+  return null;
+}
+
+/** Returns the session if the caller is the owner, else writes 401/403. */
+export async function requireOwner(req, res) {
+  const s = await requireAuth(req, res);
+  if (!s) return null;
+  if (!(await isOwner(s.email))) {
+    res.status(403).json({ error: 'Owner only' });
+    return null;
+  }
+  return s;
 }

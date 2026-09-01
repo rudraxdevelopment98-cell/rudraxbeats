@@ -130,27 +130,29 @@ Render is equivalent: **New → Web Service → Docker**, root `worker/`, same e
 2. **Attach a KV store:** Vercel dashboard → Storage → create **KV** (Upstash Redis) and connect it to the project. This auto-injects `KV_REST_API_URL` and `KV_REST_API_TOKEN`. **This is the only thing you must set in Vercel.**
 3. Deploy.
 
-### 2b. Configure everything from the in-app Settings page (no env vars needed)
+### 2b. Log in with Google + configure keys in the dashboard
 
-Once KV is attached and the site is deployed, **you manage all API keys inside the dashboard** — you do *not* need to add them as Vercel env vars.
+**Login is "Sign in with Google"** — no passwords. You set exactly **one** value in Vercel for this: the env var **`GOOGLE_CLIENT_ID`** (public, not a secret; it's the same OAuth client you create for YouTube in step 3). Everything else is entered inside the dashboard.
 
-1. Open the site. On first visit it asks you to **create an admin password** (this protects your keys, since the site is public). Remember it.
-2. Go to **⚙️ Settings** and paste in each value: OpenAI key, Suno provider URL + key, Gemini key, Worker URL + secret, YouTube client id/secret/refresh token. Secrets are stored in KV and shown masked.
-3. The dashboard shows a **Setup status** row so you can see which steps are ready.
+1. In Vercel → Settings → Environment Variables, set `GOOGLE_CLIENT_ID` to your Google OAuth client's ID, and redeploy.
+2. Open the site → **Sign in with Google**. The **first account to sign in becomes the owner**.
+3. Go to **⚙️ Settings** and paste in each value: OpenAI key, Suno provider URL + key, Gemini key, Worker URL + secret. YouTube is connected with a button (step 3). Secrets are stored in KV and shown masked.
+4. **Sharing access:** in **Settings → Access**, the owner adds other people's Google emails. They then sign in with their own Google account — nothing to share, and access can be revoked anytime.
+5. The dashboard's **Setup status** row shows which steps are ready.
 
-> Env vars still work as a fallback if you prefer them (see `web/.env.example`) — a Settings value simply overrides the matching env var. The only env var that *must* be set in Vercel for the daily cron to be protected is `CRON_SECRET` (optional but recommended).
+> API keys can still be provided as Vercel env vars if you prefer (see `web/.env.example`) — a Settings value overrides the matching env var. `GOOGLE_CLIENT_ID` (login) must be an env var; `CRON_SECRET` (protects the daily cron) is recommended.
 
 ### 3. Connect YouTube — one click from the dashboard (recommended)
 
 You do **not** need to run any script. The dashboard has a **🔗 Connect YouTube channel** button on the Settings page that runs the whole OAuth flow in the browser and stores the refresh token for you.
 
-One-time Google Cloud setup first:
+One-time Google Cloud setup — **one OAuth client serves both login and YouTube**:
 1. In Google Cloud Console, enable **YouTube Data API v3**.
 2. Create an **OAuth client** of type **Web application**.
-3. Add this exact **Authorized redirect URI** (the Settings page shows it for your domain):
-   `https://<your-app>.vercel.app/api/oauth/youtube/callback`
-4. On the OAuth consent screen, add your channel's Google account as a **Test user** (or publish the app).
-5. In the dashboard **Settings → YouTube upload**, paste the client **ID + secret**, Save, then click **Connect YouTube channel**.
+3. Under **Authorized JavaScript origins** add `https://<your-app>.vercel.app` (powers the Google login button).
+4. Under **Authorized redirect URIs** add `https://<your-app>.vercel.app/api/oauth/youtube/callback` (the Settings page shows the exact value).
+5. Use the client's **ID** as the `GOOGLE_CLIENT_ID` env var (login) **and** paste the same **ID + secret** into **Settings → YouTube upload** (uploads); Save, then click **Connect YouTube channel**.
+6. On the OAuth consent screen, add every person's Google account (yours + anyone in Access) as a **Test user** (or publish the app).
 
 Google will show an **account chooser** — pick the account that owns the channel you want to publish to. After approving, the Settings page shows **“Connected as: <channel name>”** so you can confirm who has access. A **Change account** / **Disconnect** control lets you switch or revoke.
 

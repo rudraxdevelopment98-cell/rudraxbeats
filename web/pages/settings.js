@@ -33,6 +33,9 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [yt, setYt] = useState(null); // { connected, channel, redirectUri, error }
+  const [me, setMe] = useState(null); // { user, isOwner }
+  const [access, setAccess] = useState(null); // { ownerEmail, allowed }
+  const [newEmail, setNewEmail] = useState('');
 
   const loadYt = useCallback(async () => {
     try {
@@ -43,6 +46,34 @@ export default function Settings() {
       /* ignore */
     }
   }, []);
+
+  const loadMe = useCallback(async () => {
+    try {
+      const d = await (await fetch('/api/auth/me')).json();
+      setMe(d);
+      if (d.isOwner) {
+        const a = await fetch('/api/access');
+        if (a.ok) setAccess(await a.json());
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }, []);
+
+  const changeAccess = async (action, email) => {
+    const res = await fetch('/api/access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, email }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setAccess(data);
+      setNewEmail('');
+    } else {
+      setMessage(`Access error: ${data.error}`);
+    }
+  };
 
   const load = useCallback(async () => {
     const res = await fetch('/api/config');
@@ -60,7 +91,8 @@ export default function Settings() {
   useEffect(() => {
     load();
     loadYt();
-  }, [load, loadYt]);
+    loadMe();
+  }, [load, loadYt, loadMe]);
 
   const disconnectYt = async () => {
     await fetch('/api/youtube/disconnect', { method: 'POST' });
@@ -133,6 +165,41 @@ export default function Settings() {
         <Link href="/" className="navlink">← Back to dashboard</Link>
       </div>
 
+      {me?.isOwner && access ? (
+        <div className="card">
+          <h2>👥 Access — who can log in</h2>
+          <div className="field">
+            <label>Owner</label>
+            <div className="meta">{access.ownerEmail} (you)</div>
+          </div>
+          <label>Allowed Google emails</label>
+          {access.allowed.length === 0 ? (
+            <div className="empty">No one else yet. Add a Google email below.</div>
+          ) : (
+            <div className="jobs" style={{ marginTop: 8 }}>
+              {access.allowed.map((e) => (
+                <div className="job" key={e} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{e}</span>
+                  <button type="button" className="secondary" onClick={() => changeAccess('remove', e)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="row" style={{ marginTop: 12 }}>
+            <input
+              className="text"
+              style={{ flex: 1, margin: 0 }}
+              type="email"
+              placeholder="person@gmail.com"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+            />
+            <button type="button" onClick={() => changeAccess('add', newEmail)}>Add</button>
+          </div>
+          <div className="hint">Added people sign in with their own Google account — no password to share.</div>
+        </div>
+      ) : null}
+
       <div className="card">
         <h2>🔗 Connect YouTube channel</h2>
         {yt && yt.connected ? (
@@ -170,15 +237,19 @@ export default function Settings() {
         ) : null}
 
         <div className="notice" style={{ marginTop: 14 }}>
-          <b>One-time Google Cloud setup</b> (needed before Connect works):
+          <b>One-time Google Cloud setup</b> (one OAuth client covers both login &amp; YouTube):
           <ol style={{ margin: '8px 0 0', paddingLeft: 18 }}>
             <li>Enable <b>YouTube Data API v3</b> in Google Cloud Console.</li>
             <li>Create an <b>OAuth client</b> of type <b>Web application</b>.</li>
-            <li>Add this <b>Authorized redirect URI</b> exactly:
+            <li>Under <b>Authorized JavaScript origins</b> add:{' '}
+              <code>{yt?.redirectUri ? new URL(yt.redirectUri).origin : '(loading…)'}</code>{' '}
+              (this powers the Google login button).
+            </li>
+            <li>Under <b>Authorized redirect URIs</b> add exactly:
               <br /><code>{yt?.redirectUri || '(loading…)'}</code>
             </li>
-            <li>Put the client's <b>ID + secret</b> in the “YouTube upload” section below and Save.</li>
-            <li>On the OAuth consent screen, add your channel's Google account as a <b>Test user</b>.</li>
+            <li>Set the client's <b>ID</b> as the <code>GOOGLE_CLIENT_ID</code> env var in Vercel (for login), and paste the same <b>ID + secret</b> in the “YouTube upload” section below (for uploads), then Save.</li>
+            <li>On the OAuth consent screen, add every person's Google account (yours + anyone in Access) as a <b>Test user</b>.</li>
           </ol>
         </div>
       </div>
