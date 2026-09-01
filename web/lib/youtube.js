@@ -7,18 +7,16 @@
 
 import { google } from 'googleapis';
 import { Readable } from 'stream';
+import { getConfig } from './config.js';
 
-const CLIENT_ID = process.env.YT_CLIENT_ID;
-const CLIENT_SECRET = process.env.YT_CLIENT_SECRET;
-const REFRESH_TOKEN = process.env.YT_REFRESH_TOKEN;
-const PRIVACY = process.env.YT_PRIVACY_STATUS || 'public';
-
-function getYouTubeClient() {
-  if (!CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN) {
-    throw new Error('YT_CLIENT_ID / YT_CLIENT_SECRET / YT_REFRESH_TOKEN must be set');
+function getYouTubeClient(cfg) {
+  if (!cfg.ytClientId || !cfg.ytClientSecret || !cfg.ytRefreshToken) {
+    throw new Error(
+      'YouTube client id/secret/refresh token must be set (Settings > YouTube upload)'
+    );
   }
-  const oauth2 = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
-  oauth2.setCredentials({ refresh_token: REFRESH_TOKEN });
+  const oauth2 = new google.auth.OAuth2(cfg.ytClientId, cfg.ytClientSecret);
+  oauth2.setCredentials({ refresh_token: cfg.ytRefreshToken });
   return google.youtube({ version: 'v3', auth: oauth2 });
 }
 
@@ -76,7 +74,8 @@ export async function uploadToYoutube({
   styleTags,
   thumbnailBase64,
 }) {
-  const youtube = getYouTubeClient();
+  const cfg = await getConfig();
+  const youtube = getYouTubeClient(cfg);
 
   const { stream } = await fetchToStream(videoUrl);
 
@@ -90,7 +89,7 @@ export async function uploadToYoutube({
         categoryId: '10', // Music
       },
       status: {
-        privacyStatus: PRIVACY,
+        privacyStatus: cfg.ytPrivacyStatus || 'public',
         selfDeclaredMadeForKids: false,
       },
     },

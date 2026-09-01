@@ -3,8 +3,7 @@
 // endpoint (Railway/Render) which does the heavy ffmpeg work and returns a
 // public mp4 URL. Authenticated with the shared WORKER_SECRET bearer token.
 
-const WORKER_URL = process.env.WORKER_URL;
-const WORKER_SECRET = process.env.WORKER_SECRET;
+import { getConfig } from './config.js';
 
 // ffmpeg rendering can take a while; give the request a generous timeout.
 const RENDER_TIMEOUT_MS = 1000 * 60 * 8;
@@ -18,8 +17,11 @@ const RENDER_TIMEOUT_MS = 1000 * 60 * 8;
  * @returns {Promise<{videoUrl:string, durationSec:number|null, raw:object}>}
  */
 export async function renderVideo({ audioUrl, title, thumbnailBase64, durationSec }) {
-  if (!WORKER_URL) throw new Error('WORKER_URL is not set');
-  if (!WORKER_SECRET) throw new Error('WORKER_SECRET is not set');
+  const cfg = await getConfig();
+  const WORKER_URL = cfg.workerUrl;
+  const WORKER_SECRET = cfg.workerSecret;
+  if (!WORKER_URL) throw new Error('Worker URL is not set (Settings > Video worker)');
+  if (!WORKER_SECRET) throw new Error('Worker secret is not set (Settings > Video worker)');
   if (!audioUrl) throw new Error('renderVideo: audioUrl is required');
 
   const controller = new AbortController();

@@ -3,8 +3,17 @@
 // live-polling job history with per-step status badges.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/router';
+import Link from 'next/link';
 
 const STEP_ORDER = ['lyrics', 'song', 'thumbnail', 'video', 'upload'];
+const STEP_LABELS = {
+  lyrics: 'OpenAI key',
+  song: 'Suno provider',
+  thumbnail: 'Gemini key',
+  video: 'Worker URL',
+  upload: 'YouTube auth',
+};
 
 function StepPill({ name, status }) {
   return (
@@ -46,8 +55,11 @@ function JobCard({ job }) {
 }
 
 export default function Home() {
+  const router = useRouter();
+  const [ready, setReady] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [schedule, setSchedule] = useState({ enabled: false, hour: 14, minute: 0 });
+  const [readiness, setReadiness] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [message, setMessage] = useState('');
@@ -56,16 +68,21 @@ export default function Home() {
   const loadJobs = useCallback(async () => {
     try {
       const res = await fetch('/api/jobs?limit=25');
+      if (res.status === 401) {
+        router.replace('/login');
+        return;
+      }
       const data = await res.json();
       setJobs(data.jobs || []);
     } catch (e) {
       /* ignore transient */
     }
-  }, []);
+  }, [router]);
 
   const loadSchedule = useCallback(async () => {
     try {
       const res = await fetch('/api/schedule');
+      if (res.status === 401) return;
       const data = await res.json();
       setSchedule(data);
     } catch (e) {
@@ -73,12 +90,48 @@ export default function Home() {
     }
   }, []);
 
+  const loadReadiness = useCallback(async () => {
+    try {
+      const res = await fetch('/api/config');
+      if (res.status === 401) return;
+      const data = await res.json();
+      setReadiness(data.readiness || null);
+    } catch (e) {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
-    loadJobs();
-    loadSchedule();
-    pollRef.current = setInterval(loadJobs, 5000);
+    // Gate the page behind auth first.
+    fetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.authed) {
+          router.replace('/login');
+          return;
+        }
+        setReady(true);
+        loadJobs();
+        loadSchedule();
+        loadReadiness();
+        pollRef.current = setInterval(loadJobs, 5000);
+      })
+      .catch(() => router.replace('/login'));
     return () => clearInterval(pollRef.current);
-  }, [loadJobs, loadSchedule]);
+  }, [router, loadJobs, loadSchedule, loadReadiness]);
+
+  const logout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.replace('/login');
+  };
+
+  if (!ready) {
+    return (
+      <div className="wrap">
+        <div className="card">Loading…</div>
+      </div>
+    );
+  }
 
   const generateNow = async () => {
     setGenerating(true);
@@ -122,7 +175,33 @@ export default function Home() {
             Daily AI-generated songs → YouTube, fully automated.
           </div>
         </div>
+        <div className="row">
+          <Link href="/settings" className="navlink">⚙️ Settings</Link>
+          <button className="secondary" onClick={logout}>Log out</button>
+        </div>
       </div>
+
+      {readiness ? (
+        <div className="card">
+          <h2>Setup status</h2>
+          <div className="steps">
+            {STEP_ORDER.map((s) => (
+              <span key={s} className={`step ${readiness[s] ? 'done' : 'error'}`}>
+                <span className="s" />
+                {STEP_LABELS[s]}
+              </span>
+            ))}
+          </div>
+          {STEP_ORDER.some((s) => !readiness[s]) ? (
+            <div className="hint">
+              Missing keys above. Add them on the{' '}
+              <Link href="/settings">Settings</Link> page before generating.
+            </div>
+          ) : (
+            <div className="hint">All set — you can generate a song. ✅</div>
+          )}
+        </div>
+      ) : null}
 
       <div className="card">
         <h2>Manual trigger</h2>

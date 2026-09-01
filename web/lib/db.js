@@ -40,6 +40,10 @@ const memStore = {
 
 const store = HAS_KV ? vercelKv : memStore;
 
+// Shared low-level store so lib/config.js and lib/auth.js persist to the same
+// KV (or the same in-memory fallback for local dev).
+export { store as kvStore };
+
 export function kvConfigured() {
   return HAS_KV;
 }

@@ -7,8 +7,8 @@
 // configurable via GEMINI_IMAGE_MODEL. If your key/region doesn't have the
 // preview image model, swap in an Imagen model id.
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.0-flash-preview-image-generation';
+import { getConfig } from './config.js';
+
 const API_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
 
 /**
@@ -19,7 +19,10 @@ const API_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
  * @returns {Promise<{base64:string, mimeType:string}>}
  */
 export async function generateThumbnail({ title, mood = '', styleTags = '' }) {
-  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not set');
+  const cfg = await getConfig();
+  const GEMINI_API_KEY = cfg.geminiApiKey;
+  const IMAGE_MODEL = cfg.geminiImageModel || 'gemini-2.0-flash-preview-image-generation';
+  if (!GEMINI_API_KEY) throw new Error('Gemini API key is not set (Settings > Thumbnail)');
 
   const prompt = [
     `Design a striking, high-contrast YouTube thumbnail / album cover for a song titled "${title}".`,

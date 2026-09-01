@@ -9,11 +9,7 @@
 // submit -> poll(status) pattern. Adjust the *_PATH env vars and the field
 // extractors below to match your chosen provider's docs.
 
-const BASE_URL = process.env.SUNO_PROVIDER_BASE_URL;
-const API_KEY = process.env.SUNO_PROVIDER_API_KEY;
-const SUBMIT_PATH = process.env.SUNO_SUBMIT_PATH || '/api/generate';
-const STATUS_PATH = process.env.SUNO_STATUS_PATH || '/api/status';
-const MODEL = process.env.SUNO_MODEL || 'chirp-v3-5';
+import { getConfig } from './config.js';
 
 const POLL_INTERVAL_MS = 6000;
 const MAX_POLLS = 60; // ~6 min ceiling
@@ -22,10 +18,10 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function authHeaders() {
+function authHeaders(apiKey) {
   return {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${API_KEY}`,
+    Authorization: `Bearer ${apiKey}`,
   };
 }
 
@@ -80,8 +76,14 @@ function extractStatus(obj) {
  * @returns {Promise<{audioUrl:string, providerJobId:string|null, raw:object}>}
  */
 export async function generateSong({ title, lyrics, style_tags }, onProgress = () => {}) {
+  const cfg = await getConfig();
+  const BASE_URL = cfg.sunoBaseUrl;
+  const API_KEY = cfg.sunoApiKey;
+  const SUBMIT_PATH = cfg.sunoSubmitPath || '/api/generate';
+  const STATUS_PATH = cfg.sunoStatusPath || '/api/status';
+  const MODEL = cfg.sunoModel || 'chirp-v3-5';
   if (!BASE_URL || !API_KEY) {
-    throw new Error('SUNO_PROVIDER_BASE_URL / SUNO_PROVIDER_API_KEY are not set');
+    throw new Error('Suno provider URL/key not set (Settings > Song)');
   }
 
   // 1) Submit. This body covers the most common wrapper shapes; tweak to
@@ -100,7 +102,7 @@ export async function generateSong({ title, lyrics, style_tags }, onProgress = (
 
   const submitRes = await fetch(`${BASE_URL}${SUBMIT_PATH}`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: authHeaders(API_KEY),
     body: JSON.stringify(submitBody),
   });
 
@@ -133,7 +135,7 @@ export async function generateSong({ title, lyrics, style_tags }, onProgress = (
     await sleep(POLL_INTERVAL_MS);
 
     const statusUrl = `${BASE_URL}${STATUS_PATH}${STATUS_PATH.includes('?') ? '&' : '?'}id=${encodeURIComponent(providerJobId)}`;
-    const statusRes = await fetch(statusUrl, { headers: authHeaders() });
+    const statusRes = await fetch(statusUrl, { headers: authHeaders(API_KEY) });
 
     if (!statusRes.ok) {
       // transient error - keep polling a few times before giving up

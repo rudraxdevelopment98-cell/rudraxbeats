@@ -6,8 +6,7 @@
 // (a YouTube monetization risk flagged in the README), we seed each run
 // with a randomly picked theme + genre so titles/moods/styles vary.
 
-const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+import { getConfig } from './config.js';
 
 const THEMES = [
   'late-night city drive', 'first snow of winter', 'chasing a distant dream',
@@ -36,8 +35,11 @@ function pick(arr) {
  * @returns {Promise<{title:string, lyrics:string, style_tags:string, mood:string}>}
  */
 export async function generateLyrics(opts = {}) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+  const cfg = await getConfig();
+  const apiKey = cfg.openaiApiKey;
+  const OPENAI_BASE_URL = cfg.openaiBaseUrl || 'https://api.openai.com/v1';
+  const OPENAI_MODEL = cfg.openaiModel || 'gpt-4o-mini';
+  if (!apiKey) throw new Error('OpenAI API key is not set (Settings > Lyrics)');
 
   const theme = opts.theme || pick(THEMES);
   const genre = opts.genre || pick(GENRES);

@@ -7,8 +7,10 @@
 // checked by /api/cron. See README for changing the actual cron time.
 
 import { getSchedule, setSchedule } from '../../lib/db.js';
+import { requireAuth } from '../../lib/auth.js';
 
 export default async function handler(req, res) {
+  if (!(await requireAuth(req, res))) return;
   try {
     if (req.method === 'GET') {
       const schedule = await getSchedule();

@@ -10,6 +10,7 @@
 
 import { createJob } from '../../lib/db.js';
 import { runPipeline } from '../../lib/pipeline.js';
+import { requireAuth } from '../../lib/auth.js';
 
 export const config = { maxDuration: 60 };
 
@@ -18,6 +19,7 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  if (!(await requireAuth(req, res))) return;
 
   try {
     const job = await createJob({ trigger: 'manual' });

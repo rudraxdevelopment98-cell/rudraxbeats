@@ -127,21 +127,18 @@ Render is equivalent: **New → Web Service → Docker**, root `worker/`, same e
 ### 2. Deploy the web app (Vercel)
 
 1. **Import** the repo in Vercel, set **root directory** to `web/`.
-2. **Attach a KV store:** Vercel dashboard → Storage → create **KV** (Upstash Redis) and connect it to the project. This auto-injects `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
-3. **Set environment variables** (Project → Settings → Environment Variables) — see `web/.env.example`:
+2. **Attach a KV store:** Vercel dashboard → Storage → create **KV** (Upstash Redis) and connect it to the project. This auto-injects `KV_REST_API_URL` and `KV_REST_API_TOKEN`. **This is the only thing you must set in Vercel.**
+3. Deploy.
 
-   | Var | Value |
-   | --- | --- |
-   | `OPENAI_API_KEY` | OpenAI key |
-   | `SUNO_PROVIDER_BASE_URL` / `SUNO_PROVIDER_API_KEY` | your Suno wrapper |
-   | `GEMINI_API_KEY` | Gemini key |
-   | `WORKER_URL` | the worker URL from step 1 |
-   | `WORKER_SECRET` | **must equal** the worker's value |
-   | `YT_CLIENT_ID` / `YT_CLIENT_SECRET` | Google OAuth client |
-   | `YT_REFRESH_TOKEN` | from step 3 below |
-   | `CRON_SECRET` | random string; Vercel sends it as a bearer to `/api/cron` |
+### 2b. Configure everything from the in-app Settings page (no env vars needed)
 
-4. Deploy.
+Once KV is attached and the site is deployed, **you manage all API keys inside the dashboard** — you do *not* need to add them as Vercel env vars.
+
+1. Open the site. On first visit it asks you to **create an admin password** (this protects your keys, since the site is public). Remember it.
+2. Go to **⚙️ Settings** and paste in each value: OpenAI key, Suno provider URL + key, Gemini key, Worker URL + secret, YouTube client id/secret/refresh token. Secrets are stored in KV and shown masked.
+3. The dashboard shows a **Setup status** row so you can see which steps are ready.
+
+> Env vars still work as a fallback if you prefer them (see `web/.env.example`) — a Settings value simply overrides the matching env var. The only env var that *must* be set in Vercel for the daily cron to be protected is `CRON_SECRET` (optional but recommended).
 
 ### 3. One-time YouTube OAuth (get the refresh token)
 
