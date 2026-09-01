@@ -1,10 +1,9 @@
-// pages/login.js
-// "Sign in with Google" (GSI). The first allowed account to sign in becomes
-// the owner; others must be added by the owner in Settings → Access.
-
+// pages/login.js — motion-based Google sign-in screen.
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import Script from 'next/script';
+import { motion } from 'framer-motion';
+import { Background } from '../components/ui';
 
 export default function Login() {
   const router = useRouter();
@@ -27,7 +26,6 @@ export default function Login() {
       .catch(() => setState('noclient'));
   }, [router]);
 
-  // Initialise the Google button once both the script and the client id exist.
   useEffect(() => {
     if (state !== 'ready' || !gsiReady || !clientId || !window.google) return;
     window.google.accounts.id.initialize({
@@ -50,49 +48,64 @@ export default function Login() {
     });
     if (btnRef.current) {
       window.google.accounts.id.renderButton(btnRef.current, {
-        theme: 'filled_blue',
+        theme: 'filled_black',
         size: 'large',
-        text: 'signin_with',
+        text: 'continue_with',
         shape: 'pill',
+        width: 280,
       });
     }
   }, [state, gsiReady, clientId, router]);
 
   return (
-    <div className="auth-wrap">
+    <div className="auth">
+      <Background />
       <Script src="https://accounts.google.com/gsi/client" onLoad={() => setGsiReady(true)} />
-      <div className="card auth-card">
-        <h1>🎵 AI Song Engine</h1>
+      <motion.div
+        className="card auth-card"
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 220, damping: 22 }}
+      >
+        <motion.div
+          className="logo-lg"
+          initial={{ rotate: -12, scale: 0.6 }}
+          animate={{ rotate: 0, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 260, damping: 14, delay: 0.1 }}
+        >
+          🎵
+        </motion.div>
+        <h1>AI Song Engine</h1>
 
-        {state === 'loading' && <p className="sub">Loading…</p>}
+        {state === 'loading' && <p>Loading…</p>}
 
         {state === 'nokv' && (
-          <div className="notice" style={{ marginTop: 16 }}>
-            <b>Attach a Vercel KV store first</b> (Vercel → project → Storage →
-            Create → KV), then redeploy and reload. That's the one-time database
-            the engine needs.
+          <div className="notice" style={{ textAlign: 'left' }}>
+            <b>Attach a Vercel KV / Redis store</b> to this project (Storage →
+            Create), then redeploy and reload. It's the one-time database the
+            engine needs.
           </div>
         )}
 
         {state === 'noclient' && (
-          <div className="notice" style={{ marginTop: 16 }}>
-            <b>Google login isn't configured yet.</b> Set the{' '}
-            <code>GOOGLE_CLIENT_ID</code> environment variable in Vercel to your
-            Google OAuth client's ID, then redeploy. (See the README — it's the
-            same client you'll use for YouTube.)
+          <div className="notice" style={{ textAlign: 'left' }}>
+            <b>Google login isn't configured.</b> Set <code>GOOGLE_CLIENT_ID</code>{' '}
+            in Vercel to your OAuth client's ID, then redeploy.
           </div>
         )}
 
         {state === 'ready' && (
           <>
-            <p className="sub" style={{ marginBottom: 18 }}>
-              Sign in with the Google account allowed to manage this channel.
-            </p>
-            <div ref={btnRef} />
-            {error ? <div className="err" style={{ marginTop: 14 }}>⚠ {error}</div> : null}
+            <p>Sign in with the Google account for this channel.</p>
+            <div className="gbtn-wrap" ref={btnRef} />
+            {error ? (
+              <motion.div className="err-note" style={{ marginTop: 16 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                ⚠ {error}
+              </motion.div>
+            ) : null}
           </>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }
