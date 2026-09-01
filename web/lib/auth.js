@@ -13,6 +13,7 @@
 import crypto from 'crypto';
 import { google } from 'googleapis';
 import { kvStore } from './db.js';
+import { DEFAULT_GOOGLE_CLIENT_ID } from './googleClient.js';
 
 const SECRET_KEY = 'auth:sessionSecret';
 const ACCESS_KEY = 'access';
@@ -21,7 +22,7 @@ const SESSION_TTL_SEC = 60 * 60 * 24 * 7; // 7 days
 const isProd = process.env.NODE_ENV === 'production';
 
 export function getGoogleClientId() {
-  return process.env.GOOGLE_CLIENT_ID || '';
+  return process.env.GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
 }
 export function loginConfigured() {
   return Boolean(getGoogleClientId());

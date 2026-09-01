@@ -10,6 +10,7 @@
 // returns only { set, hint } for them.
 
 import { kvConfigured, kvStore } from './db.js';
+import { DEFAULT_GOOGLE_CLIENT_ID } from './googleClient.js';
 
 const CONFIG_KEY = 'config';
 
@@ -36,7 +37,7 @@ export const FIELDS = {
   workerSecret: { env: 'WORKER_SECRET', secret: true, label: 'Worker Secret', group: 'Video worker' },
 
   // YouTube
-  ytClientId: { env: 'YT_CLIENT_ID', label: 'YouTube OAuth Client ID', group: 'YouTube upload' },
+  ytClientId: { env: 'YT_CLIENT_ID', default: DEFAULT_GOOGLE_CLIENT_ID, label: 'YouTube OAuth Client ID', group: 'YouTube upload' },
   ytClientSecret: { env: 'YT_CLIENT_SECRET', secret: true, label: 'YouTube OAuth Client Secret', group: 'YouTube upload' },
   ytRefreshToken: { env: 'YT_REFRESH_TOKEN', secret: true, label: 'YouTube Refresh Token', group: 'YouTube upload' },
   ytPrivacyStatus: { env: 'YT_PRIVACY_STATUS', default: 'public', label: 'Upload Privacy (public/unlisted/private)', group: 'YouTube upload' },
