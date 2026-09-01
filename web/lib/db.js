@@ -10,16 +10,66 @@
 // app still boots for local dev (state is NOT persisted across restarts).
 
 import { createClient } from '@vercel/kv';
+import Redis from 'ioredis';
 
-// Vercel now provisions KV via the Upstash Marketplace, which may inject the
-// credentials under either the KV_REST_API_* names (native/compat) or the
-// UPSTASH_REDIS_REST_* names. Accept whichever pair is present so "attach a
-// KV store" works regardless of the exact env var names Vercel uses.
-const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+// We support three storage backends, picked automatically by which env vars
+// Vercel injected when a store was attached:
+//
+//  1. Upstash REST  -> KV_REST_API_URL/TOKEN or UPSTASH_REDIS_REST_URL/TOKEN
+//                      (used by @vercel/kv over HTTP)
+//  2. Redis TCP     -> REDIS_URL / KV_URL (a redis:// or rediss:// string;
+//                      this is what a plain "Redis" Marketplace store gives)
+//  3. in-memory     -> nothing set (local dev only; not persisted)
+//
+// For (2) we wrap ioredis in a tiny adapter that JSON-serializes values so it
+// exposes the same get/set/lpush/lrange interface as @vercel/kv.
+const KV_REST_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+const KV_REST_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+const REDIS_URL = process.env.REDIS_URL || process.env.KV_URL || process.env.REDIS_TCP_URL;
 
-const HAS_KV = Boolean(KV_URL && KV_TOKEN);
-const vercelKv = HAS_KV ? createClient({ url: KV_URL, token: KV_TOKEN }) : null;
+const HAS_REST = Boolean(KV_REST_URL && KV_REST_TOKEN);
+const HAS_TCP = !HAS_REST && Boolean(REDIS_URL);
+const HAS_KV = HAS_REST || HAS_TCP;
+
+function makeTcpStore(url) {
+  const client = new Redis(url, {
+    maxRetriesPerRequest: 3,
+    enableReadyCheck: false,
+    // rediss:// implies TLS; ioredis enables it from the scheme, but be explicit.
+    tls: url.startsWith('rediss://') ? {} : undefined,
+    lazyConnect: false,
+  });
+  client.on('error', (e) => console.error('redis error:', e.message));
+  const dec = (v) => {
+    if (v == null) return null;
+    try {
+      return JSON.parse(v);
+    } catch (_) {
+      return v;
+    }
+  };
+  return {
+    async get(key) {
+      return dec(await client.get(key));
+    },
+    async set(key, val) {
+      await client.set(key, JSON.stringify(val));
+    },
+    async lpush(key, val) {
+      await client.lpush(key, JSON.stringify(val));
+    },
+    async lrange(key, start, stop) {
+      const arr = await client.lrange(key, start, stop);
+      return (arr || []).map(dec);
+    },
+  };
+}
+
+const vercelKv = HAS_REST
+  ? createClient({ url: KV_REST_URL, token: KV_REST_TOKEN })
+  : HAS_TCP
+    ? makeTcpStore(REDIS_URL)
+    : null;
 
 // --- in-memory fallback (dev only) -----------------------------------------
 const mem = {
