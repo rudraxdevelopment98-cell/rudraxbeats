@@ -140,21 +140,32 @@ Once KV is attached and the site is deployed, **you manage all API keys inside t
 
 > Env vars still work as a fallback if you prefer them (see `web/.env.example`) — a Settings value simply overrides the matching env var. The only env var that *must* be set in Vercel for the daily cron to be protected is `CRON_SECRET` (optional but recommended).
 
-### 3. One-time YouTube OAuth (get the refresh token)
+### 3. Connect YouTube — one click from the dashboard (recommended)
 
-Do this **once**, locally, signed in as the **channel owner**:
+You do **not** need to run any script. The dashboard has a **🔗 Connect YouTube channel** button on the Settings page that runs the whole OAuth flow in the browser and stores the refresh token for you.
+
+One-time Google Cloud setup first:
+1. In Google Cloud Console, enable **YouTube Data API v3**.
+2. Create an **OAuth client** of type **Web application**.
+3. Add this exact **Authorized redirect URI** (the Settings page shows it for your domain):
+   `https://<your-app>.vercel.app/api/oauth/youtube/callback`
+4. On the OAuth consent screen, add your channel's Google account as a **Test user** (or publish the app).
+5. In the dashboard **Settings → YouTube upload**, paste the client **ID + secret**, Save, then click **Connect YouTube channel**.
+
+Google will show an **account chooser** — pick the account that owns the channel you want to publish to. After approving, the Settings page shows **“Connected as: <channel name>”** so you can confirm who has access. A **Change account** / **Disconnect** control lets you switch or revoke.
+
+- Scopes requested: `youtube.upload` (upload) + `youtube.readonly` (to display the connected channel name).
+
+<details>
+<summary>Alternative: get the refresh token via a local script (Desktop OAuth client)</summary>
 
 ```bash
 cd web
 npm install
 YT_CLIENT_ID=xxx YT_CLIENT_SECRET=yyy npm run get-refresh-token
 ```
-
-It prints a Google consent URL. Open it **in a browser logged into the target YouTube channel's Google account**, approve, paste the code back, and it prints the **refresh token**. Put that in Vercel as `YT_REFRESH_TOKEN` and redeploy.
-
-- The OAuth client must be **Desktop app** type (uses the out-of-band redirect).
-- Add the channel's Google account as a **Test user** on the OAuth consent screen (or publish the app).
-- Scope requested: `youtube.upload` only (least privilege).
+Prints a consent URL; open it as the channel owner, paste the code back, and it prints a refresh token to store as `YT_REFRESH_TOKEN`. This uses a **Desktop app** OAuth client (out-of-band redirect). The in-app button above is easier and is the recommended path.
+</details>
 
 ### 4. Test end-to-end, then enable the daily run
 

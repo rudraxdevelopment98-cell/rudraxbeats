@@ -9,6 +9,12 @@ import { google } from 'googleapis';
 import { Readable } from 'stream';
 import { getConfig } from './config.js';
 
+// Scopes: upload videos + read the channel identity (to show "connected as").
+export const YT_SCOPES = [
+  'https://www.googleapis.com/auth/youtube.upload',
+  'https://www.googleapis.com/auth/youtube.readonly',
+];
+
 function getYouTubeClient(cfg) {
   if (!cfg.ytClientId || !cfg.ytClientSecret || !cfg.ytRefreshToken) {
     throw new Error(
@@ -18,6 +24,50 @@ function getYouTubeClient(cfg) {
   const oauth2 = new google.auth.OAuth2(cfg.ytClientId, cfg.ytClientSecret);
   oauth2.setCredentials({ refresh_token: cfg.ytRefreshToken });
   return google.youtube({ version: 'v3', auth: oauth2 });
+}
+
+// --- OAuth (in-app "Connect YouTube") --------------------------------------
+
+function oauthClient(cfg, redirectUri) {
+  return new google.auth.OAuth2(cfg.ytClientId, cfg.ytClientSecret, redirectUri);
+}
+
+/**
+ * Build the Google consent URL. `select_account` lets the user CHOOSE which
+ * Google account / channel to grant access to; `offline` + `consent` ensure
+ * a refresh_token is always returned.
+ */
+export function buildConsentUrl(cfg, redirectUri) {
+  return oauthClient(cfg, redirectUri).generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent select_account',
+    scope: YT_SCOPES,
+    include_granted_scopes: true,
+  });
+}
+
+/** Exchange an auth code for tokens (contains refresh_token). */
+export async function exchangeCodeForTokens(cfg, redirectUri, code) {
+  const { tokens } = await oauthClient(cfg, redirectUri).getToken(code);
+  return tokens;
+}
+
+/**
+ * Fetch the connected channel's identity so the UI can show who has access.
+ * @returns {Promise<{id, title, thumbnail}|null>}
+ */
+export async function getConnectedChannel() {
+  const cfg = await getConfig();
+  if (!cfg.ytClientId || !cfg.ytClientSecret || !cfg.ytRefreshToken) return null;
+  const youtube = getYouTubeClient(cfg);
+  const res = await youtube.channels.list({ part: ['snippet'], mine: true });
+  const ch = res.data.items?.[0];
+  if (!ch) return null;
+  return {
+    id: ch.id,
+    title: ch.snippet?.title || '(unknown channel)',
+    thumbnail: ch.snippet?.thumbnails?.default?.url || null,
+  };
 }
 
 async function fetchToStream(url) {

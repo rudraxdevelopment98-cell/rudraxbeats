@@ -15,12 +15,34 @@ const GROUP_ORDER = [
   'YouTube upload',
 ];
 
+const YT_MESSAGES = {
+  connected: { kind: 'ok', text: '✅ YouTube channel connected.' },
+  norefresh: {
+    kind: 'warn',
+    text:
+      'Google did not return a refresh token. Revoke this app at ' +
+      'myaccount.google.com/permissions, then Connect again.',
+  },
+  error: { kind: 'warn', text: '⚠ Could not connect' },
+};
+
 export default function Settings() {
   const router = useRouter();
   const [fields, setFields] = useState(null);
   const [values, setValues] = useState({}); // key -> new input value
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [yt, setYt] = useState(null); // { connected, channel, redirectUri, error }
+
+  const loadYt = useCallback(async () => {
+    try {
+      const res = await fetch('/api/youtube/status');
+      if (res.status === 401) return;
+      setYt(await res.json());
+    } catch (_) {
+      /* ignore */
+    }
+  }, []);
 
   const load = useCallback(async () => {
     const res = await fetch('/api/config');
@@ -37,7 +59,19 @@ export default function Settings() {
 
   useEffect(() => {
     load();
-  }, [load]);
+    loadYt();
+  }, [load, loadYt]);
+
+  const disconnectYt = async () => {
+    await fetch('/api/youtube/disconnect', { method: 'POST' });
+    loadYt();
+    load();
+  };
+
+  // Query param feedback after the OAuth round-trip.
+  const ytParam = router.query.youtube;
+  const ytMsg = ytParam ? YT_MESSAGES[ytParam] : null;
+  const ytReason = router.query.reason;
 
   const save = async (e) => {
     e.preventDefault();
@@ -97,6 +131,56 @@ export default function Settings() {
           <div className="sub">Keys are stored in your KV database, not in code.</div>
         </div>
         <Link href="/" className="navlink">← Back to dashboard</Link>
+      </div>
+
+      <div className="card">
+        <h2>🔗 Connect YouTube channel</h2>
+        {yt && yt.connected ? (
+          <div className="yt-connected">
+            {yt.channel?.thumbnail ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={yt.channel.thumbnail} alt="" className="yt-avatar" />
+            ) : null}
+            <div>
+              <div className="yt-title">Connected as <b>{yt.channel?.title}</b></div>
+              <div className="meta">Uploads will go to this channel.</div>
+            </div>
+            <div style={{ marginLeft: 'auto' }} className="row">
+              <a className="navlink" href="/api/oauth/youtube/start">Change account</a>
+              <button type="button" className="secondary" onClick={disconnectYt}>Disconnect</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="sub" style={{ marginTop: 0 }}>
+              Click connect, then <b>pick the Google account that owns your channel</b>.
+              The refresh token is captured automatically — no scripts.
+            </p>
+            <a className="connect-btn" href="/api/oauth/youtube/start">
+              Connect YouTube channel
+            </a>
+            {yt && yt.error ? <div className="hint">Status: {yt.error}</div> : null}
+          </>
+        )}
+
+        {ytMsg ? (
+          <div className={ytMsg.kind === 'ok' ? 'yt-ok' : 'notice'} style={{ marginTop: 14 }}>
+            {ytMsg.text}{ytParam === 'error' && ytReason ? `: ${ytReason}` : ''}
+          </div>
+        ) : null}
+
+        <div className="notice" style={{ marginTop: 14 }}>
+          <b>One-time Google Cloud setup</b> (needed before Connect works):
+          <ol style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+            <li>Enable <b>YouTube Data API v3</b> in Google Cloud Console.</li>
+            <li>Create an <b>OAuth client</b> of type <b>Web application</b>.</li>
+            <li>Add this <b>Authorized redirect URI</b> exactly:
+              <br /><code>{yt?.redirectUri || '(loading…)'}</code>
+            </li>
+            <li>Put the client's <b>ID + secret</b> in the “YouTube upload” section below and Save.</li>
+            <li>On the OAuth consent screen, add your channel's Google account as a <b>Test user</b>.</li>
+          </ol>
+        </div>
       </div>
 
       <form onSubmit={save}>

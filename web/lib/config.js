@@ -100,6 +100,21 @@ export async function setConfig(patch = {}) {
 }
 
 /**
+ * Remove stored values for the given field keys (e.g. to disconnect YouTube).
+ * @param {string[]} keys
+ */
+export async function clearConfig(keys = []) {
+  if (!kvConfigured()) {
+    throw new Error('No KV store attached.');
+  }
+  const stored = await readStored();
+  const next = { ...stored };
+  for (const k of keys) delete next[k];
+  await kvStore.set(CONFIG_KEY, next);
+  return getPublicConfig();
+}
+
+/**
  * Browser-safe view: real values for non-secrets, only { set, hint } for
  * secrets. Also reports whether each value currently comes from KV or env.
  */
