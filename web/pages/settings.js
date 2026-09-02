@@ -42,6 +42,17 @@ export default function Settings() {
   const [access, setAccess] = useState(null);
   const [newEmail, setNewEmail] = useState('');
   const [tests, setTests] = useState({}); // target -> { loading, ok, message }
+  const [preview, setPreview] = useState(null); // { loading } | lyrics result
+
+  const previewLyrics = async () => {
+    setPreview({ loading: true });
+    try {
+      const r = await fetch('/api/preview-lyrics');
+      setPreview(await r.json());
+    } catch (e) {
+      setPreview({ ok: false, error: e.message });
+    }
+  };
 
   const runTest = async (target) => {
     setTests((t) => ({ ...t, [target]: { loading: true } }));
@@ -247,22 +258,61 @@ export default function Settings() {
             <Card key={group} delay={0.14 + i * 0.04}>
               <div className="card-title" style={{ justifyContent: 'space-between' }}>
                 <span>{GROUP_ICON[group]} {group}</span>
-                {GROUP_TEST[group] && (
-                  <MotionButton
-                    type="button"
-                    className="btn ghost"
-                    style={{ padding: '5px 12px', fontSize: 12, textTransform: 'none', letterSpacing: 0 }}
-                    onClick={() => runTest(GROUP_TEST[group])}
-                    disabled={tests[GROUP_TEST[group]]?.loading}
-                  >
-                    {tests[GROUP_TEST[group]]?.loading ? <span className="spin" /> : '🧪 Test'}
-                  </MotionButton>
-                )}
+                <span className="row" style={{ gap: 8 }}>
+                  {group === 'Lyrics (OpenAI)' && (
+                    <MotionButton
+                      type="button"
+                      className="btn ghost"
+                      style={{ padding: '5px 12px', fontSize: 12, textTransform: 'none', letterSpacing: 0 }}
+                      onClick={previewLyrics}
+                      disabled={preview?.loading}
+                    >
+                      {preview?.loading ? <span className="spin" /> : '✍️ Preview lyrics'}
+                    </MotionButton>
+                  )}
+                  {GROUP_TEST[group] && (
+                    <MotionButton
+                      type="button"
+                      className="btn ghost"
+                      style={{ padding: '5px 12px', fontSize: 12, textTransform: 'none', letterSpacing: 0 }}
+                      onClick={() => runTest(GROUP_TEST[group])}
+                      disabled={tests[GROUP_TEST[group]]?.loading}
+                    >
+                      {tests[GROUP_TEST[group]]?.loading ? <span className="spin" /> : '🧪 Test'}
+                    </MotionButton>
+                  )}
+                </span>
               </div>
               {GROUP_TEST[group] && tests[GROUP_TEST[group]] && !tests[GROUP_TEST[group]].loading && (
                 <div className={tests[GROUP_TEST[group]].ok ? 'ok-note' : 'notice'} style={{ marginBottom: 14 }}>
                   {tests[GROUP_TEST[group]].ok ? '✓ ' : '✗ '}{tests[GROUP_TEST[group]].message}
                 </div>
+              )}
+              {group === 'Lyrics (OpenAI)' && preview && !preview.loading && (
+                preview.ok ? (
+                  <motion.div className="ok-note" style={{ marginBottom: 14 }}
+                    initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>
+                      {preview.title}{preview.titleRoman ? ` | ${preview.titleRoman}` : ''}
+                    </div>
+                    <div className="job-meta" style={{ margin: '4px 0 10px' }}>
+                      {preview.language} · {preview.mood} · {preview.styleTags}
+                    </div>
+                    <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 13, lineHeight: 1.6, maxHeight: 260, overflow: 'auto' }}>
+                      {preview.lyrics}
+                    </pre>
+                    {preview.lyricsRoman && (
+                      <details style={{ marginTop: 10 }}>
+                        <summary style={{ cursor: 'pointer', fontSize: 12 }}>Romanized version (this is what Suno sings) ▾</summary>
+                        <pre style={{ whiteSpace: 'pre-wrap', margin: '8px 0 0', fontFamily: 'inherit', fontSize: 12.5, lineHeight: 1.6, maxHeight: 220, overflow: 'auto' }}>
+                          {preview.lyricsRoman}
+                        </pre>
+                      </details>
+                    )}
+                  </motion.div>
+                ) : (
+                  <div className="notice" style={{ marginBottom: 14 }}>✗ {preview.error}</div>
+                )
               )}
               {grouped[group].map(([key, f]) => (
                 <div className="field" key={key}>
