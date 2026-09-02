@@ -13,6 +13,10 @@ import { getConfig } from './config.js';
 export const YT_SCOPES = [
   'https://www.googleapis.com/auth/youtube.upload',
   'https://www.googleapis.com/auth/youtube.readonly',
+  // Drive storage for the generated audio/video (app-created files only).
+  'https://www.googleapis.com/auth/drive.file',
+  // Needed to add uploaded videos to a playlist.
+  'https://www.googleapis.com/auth/youtube',
 ];
 
 function getYouTubeClient(cfg) {

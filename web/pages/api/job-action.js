@@ -5,10 +5,7 @@
 //  - retry:  start a fresh pipeline run and return the new jobId
 
 import { requireAuth } from '../../lib/auth.js';
-import { deleteJob, cancelJob, createJob } from '../../lib/db.js';
-import { runPipeline } from '../../lib/pipeline.js';
-
-export const config = { maxDuration: 60 };
+import { deleteJob, cancelJob, createJob, enqueueJob } from '../../lib/db.js';
 
 export default async function handler(req, res) {
   if (!(await requireAuth(req, res))) return;
@@ -28,7 +25,7 @@ export default async function handler(req, res) {
     }
     if (action === 'retry') {
       const job = await createJob({ trigger: 'manual' });
-      runPipeline({ jobId: job.id, trigger: 'manual' }).catch((e) => console.error('retry pipeline:', e));
+      await enqueueJob(job.id);
       return res.status(202).json({ ok: true, jobId: job.id });
     }
     return res.status(400).json({ error: 'Unknown action' });

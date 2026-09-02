@@ -238,6 +238,12 @@ button, input, select { font-family: inherit; }
 .section-eyebrow h2 { font-size: 16px; margin: 0; font-weight: 700; }
 .section-eyebrow .count { color: var(--faint); font-size: 13px; }
 
+/* live progress bar */
+.prog { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.prog-fill { height: 100%; border-radius: 999px; background: var(--grad); box-shadow: var(--shadow-glow); }
+
+.badge.queued { background: rgba(99,102,241,.16); color: #a5b4fc; }
+
 .spin { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
   border-radius: 50%; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

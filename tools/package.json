@@ -1,0 +1,12 @@
+{
+  "name": "ai-song-engine-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local helper: sync finished songs from Google Drive to this computer",
+  "scripts": {
+    "sync": "node sync-local.js"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  }
+}

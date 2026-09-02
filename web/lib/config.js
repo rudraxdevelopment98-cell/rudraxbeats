@@ -42,6 +42,16 @@ export const FIELDS = {
   ytClientSecret: { env: 'YT_CLIENT_SECRET', secret: true, label: 'YouTube OAuth Client Secret', group: 'YouTube upload' },
   ytRefreshToken: { env: 'YT_REFRESH_TOKEN', secret: true, label: 'YouTube Refresh Token', group: 'YouTube upload' },
   ytPrivacyStatus: { env: 'YT_PRIVACY_STATUS', default: 'public', label: 'Upload Privacy (public/unlisted/private)', group: 'YouTube upload' },
+
+  // Playlist & content direction
+  ytPlaylistId: { env: 'YT_PLAYLIST_ID', label: 'Playlist ID or URL (uploads get added here)', group: 'Playlist & content' },
+  playlistTopic: { env: 'PLAYLIST_TOPIC', default: '', label: 'Playlist subject / category (songs are written about this)', group: 'Playlist & content' },
+  songLanguage: { env: 'SONG_LANGUAGE', default: 'English', label: 'Song language', group: 'Playlist & content' },
+
+  // Storage (Google Drive) + local sync
+  driveFolderName: { env: 'DRIVE_FOLDER_NAME', default: 'AI Song Engine', label: 'Drive folder name', group: 'Storage (Google Drive)' },
+  driveKeepSongs: { env: 'DRIVE_KEEP_SONGS', default: '4', label: 'Keep last N songs in Drive (older auto-deleted)', group: 'Storage (Google Drive)' },
+  localSavePath: { env: 'LOCAL_SAVE_PATH', default: '', label: 'Local folder path (for the sync script)', group: 'Storage (Google Drive)' },
 };
 
 async function readStored() {

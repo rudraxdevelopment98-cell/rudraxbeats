@@ -4,13 +4,15 @@ import { useRouter } from 'next/router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Background, Nav, Card, MotionButton, Loader, fadeUp, stagger } from '../components/ui';
 
-const GROUP_ORDER = ['Lyrics (OpenAI)', 'Song (Suno)', 'Thumbnail (Gemini)', 'Video worker', 'YouTube upload'];
+const GROUP_ORDER = ['Lyrics (OpenAI)', 'Song (Suno)', 'Thumbnail (Gemini)', 'Video worker', 'YouTube upload', 'Playlist & content', 'Storage (Google Drive)'];
 const GROUP_ICON = {
   'Lyrics (OpenAI)': '✍️',
   'Song (Suno)': '🎵',
   'Thumbnail (Gemini)': '🖼️',
   'Video worker': '🎬',
   'YouTube upload': '⬆️',
+  'Playlist & content': '🎼',
+  'Storage (Google Drive)': '💾',
 };
 const GROUP_TEST = {
   'Lyrics (OpenAI)': 'openai',

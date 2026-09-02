@@ -142,8 +142,10 @@ export async function createJob(seed = {}) {
   const now = new Date().toISOString();
   const job = {
     id,
-    status: 'pending', // pending | running | done | error
+    status: 'queued', // queued | running | done | error
     step: null, // current/last step
+    progress: 0, // 0-100 overall
+    note: 'Waiting for the worker to pick this up…', // human-readable progress
     trigger: seed.trigger || 'manual',
     createdAt: now,
     updatedAt: now,
@@ -210,6 +212,16 @@ export async function listJobs(limit = 25) {
   if (!ids || ids.length === 0) return [];
   const jobs = await Promise.all(ids.map((id) => getJob(id)));
   return jobs.filter(Boolean);
+}
+
+/**
+ * Push a job id onto the worker queue. The always-on worker (Railway/Render)
+ * pops from this list and runs the full pipeline, so Vercel never has to hold
+ * a multi-minute request open.
+ */
+export async function enqueueJob(id) {
+  await store.lpush('jobs:queue', id);
+  return id;
 }
 
 /** Permanently remove a job and drop it from the index. */

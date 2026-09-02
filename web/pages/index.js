@@ -64,7 +64,26 @@ function JobCard({ job, onAction, busy }) {
         <span className={`badge ${stalled ? 'error' : job.status}`}>{status}</span>
       </div>
       <Segments steps={job.steps} />
+
+      {/* live progress from the worker */}
+      {(job.status === 'running' || job.status === 'queued') && (
+        <div style={{ marginTop: 12 }}>
+          <div className="prog"><motion.div className="prog-fill"
+            initial={{ width: 0 }} animate={{ width: `${job.progress || 0}%` }}
+            transition={{ type: 'spring', stiffness: 120, damping: 20 }} /></div>
+          <div className="job-meta" style={{ marginTop: 6 }}>
+            {job.progress ? `${job.progress}% · ` : ''}{job.note || 'Working…'}
+          </div>
+        </div>
+      )}
+
       {job.error ? <div className="job-err">⚠ {job.error}</div> : null}
+      {job.status === 'done' && (
+        <div className="job-meta" style={{ marginTop: 8 }}>
+          {job.playlistAdded ? '🎼 Added to playlist · ' : ''}
+          {job.driveFiles?.length ? `💾 ${job.driveFiles.length} file(s) in Drive` : ''}
+        </div>
+      )}
       {stalled && !job.error ? (
         <div className="job-err" style={{ color: 'var(--amber)', background: 'rgba(251,191,36,.08)', borderColor: 'rgba(251,191,36,.25)' }}>
           ⏳ Stuck for &gt;3 min. Serverless can&apos;t run long jobs — retry, or deploy the worker (see below).

@@ -1,18 +1,19 @@
 {
   "name": "ai-song-engine-worker",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Always-on ffmpeg render worker for the AI song engine",
+  "description": "Always-on worker: runs the full AI song pipeline (lyrics, song, thumbnail, video, Drive, YouTube)",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "@vercel/blob": "^0.27.0",
     "express": "^4.21.2",
     "ffmpeg-static": "^5.2.0",
-    "ffprobe-static": "^3.1.0"
+    "ffprobe-static": "^3.1.0",
+    "googleapis": "^144.0.0",
+    "ioredis": "^5.4.1"
   },
   "engines": {
     "node": ">=18.18.0"

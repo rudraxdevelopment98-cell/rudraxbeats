@@ -1,242 +1,198 @@
 # 🎵 AI Song Engine
 
-A web-based engine that **fully automates a daily AI-generated-song YouTube channel**. It writes the lyrics, generates the song, renders a video, generates a thumbnail, and uploads to YouTube — from a one-click button or a daily schedule.
+A hands-off engine for a daily AI-song YouTube channel. One click (or a daily
+schedule) writes lyrics, generates the song, makes cover art, renders a video,
+stores it in Google Drive, uploads to YouTube and adds it to your playlist —
+with live progress in a dashboard.
 
 ```
-Vercel Cron / "Generate Now"
-        │
-        ▼
-  /api/generate ──► lib/pipeline.js
-        │
-        ├─ 1. lyrics    OpenAI Chat Completions      → {title, lyrics, style, mood}
-        ├─ 2. song      third-party Suno wrapper API  → audioUrl
-        ├─ 3. thumbnail Gemini image model            → base64 PNG
-        ├─ 4. video     worker POST /render (ffmpeg)   → public videoUrl
-        └─ 5. upload    YouTube Data API v3            → youtube.com/watch?v=…
-        │
-        ▼
-  job status written to Vercel KV after every step (dashboard polls it)
+   Dashboard "Generate Now"          Vercel Cron (daily)
+              │                              │
+              └───────────► Redis queue ◄────┘        (Vercel only enqueues —
+                                 │                      it never runs the work)
+                                 ▼
+                    ALWAYS-ON WORKER  (Railway / Render)
+                                 │
+   ①  lyrics      OpenAI ─────── writes a song about your playlist's subject
+   ②  song        Suno wrapper ─ your own Suno Pro account
+   ③  cover art   Gemini image
+   ④  video       ffmpeg ─────── Ken-Burns still + waveform + title
+   ⑤  storage     Google Drive ─ keeps the newest N songs, deletes older
+   ⑥  publish     YouTube ────── upload + thumbnail + add to playlist
+                                 │
+                                 ▼
+                 progress written to Redis after every stage
+                        (dashboard polls and shows it live)
 ```
 
-Two deployables:
+**Why a separate worker?** Vercel functions are killed after ~10–60s, but a song
+takes minutes. So Vercel hosts the dashboard and only pushes a job onto a Redis
+queue; the always-on worker does all the long work. This is what makes
+"one click" and the daily schedule actually complete.
 
-| Service | Folder | Host | Why |
+| Service | Folder | Host | Role |
 | --- | --- | --- | --- |
-| **Web app** (dashboard + API + cron) | `web/` | **Vercel** | Next.js, serverless, free Cron |
-| **Render worker** (ffmpeg) | `worker/` | **Railway / Render** | ffmpeg needs a long-running, non-serverless process |
+| Dashboard + API + cron | `web/` | **Vercel** | UI, settings, auth, enqueue |
+| Pipeline runner | `worker/` | **Railway / Render** | does all the actual work |
+| Local downloader (optional) | `tools/` | your PC | Drive → your folder |
 
 ---
 
-## ⚠️ Read this first — free tools vs. APIs
+## ⚠️ Read this first — what is and isn't possible
 
-The original idea (Suno for songs, ChatGPT-free for lyrics, Google **Flow/Veo** free plan for video across multiple Google accounts) **cannot be automated reliably or within terms of service:**
-
-- **ChatGPT free** and **Google Flow (Veo)** have **no public API on the free tier.** Automating them means driving a headless browser and rotating logins across many Google accounts — this breaks their ToS, gets accounts flagged/banned, and shatters every time the UI changes. It is not a foundation you can run a daily channel on.
-- **Suno** has **no official public API** either (as of 2026). The only programmatic access is unofficial third-party wrappers (Apiframe, MusicAPI, Crazyrouter, …), which carry vendor + ToS risk.
-
-So this engine is built on the **automatable path**, exactly as the project spec pivoted to:
-
-- **Lyrics** → OpenAI API (cheap; `gpt-4o-mini`).
-- **Song** → a third-party Suno wrapper (pluggable — you supply the provider).
-- **Thumbnail** → Google Gemini image API (has a generous free tier).
-- **Video** → **your own** ffmpeg worker (no third party, no per-render cost) that turns the song + thumbnail into a real 1080p video with a Ken-Burns background, a waveform, and a title overlay.
-- **Upload** → official YouTube Data API v3.
-
-Every provider is behind a small `lib/*.js` module, so if a cheaper or free-tier option appears you swap one file. If you still want the browser-automation route for a specific tool, that's a separate, fragile add-on — keep it isolated from this pipeline.
-
----
-
-## Repository layout
-
-```
-web/
-  package.json            Next.js + @vercel/kv + googleapis
-  vercel.json             daily Cron → /api/cron  +  function maxDuration
-  next.config.js
-  .env.example            all web env vars (copy to .env.local)
-  lib/
-    db.js                 Vercel KV helpers (jobs + schedule)
-    lyrics.js             generateLyrics()   – OpenAI
-    song.js               generateSong()     – third-party Suno wrapper
-    thumbnail.js          generateThumbnail()– Gemini image
-    worker.js             renderVideo()      – calls the worker
-    youtube.js            uploadToYoutube()  – YouTube Data API v3
-    pipeline.js           runPipeline()      – orchestrates + writes KV
-  pages/
-    index.js              dashboard: Generate Now, schedule, job history
-    api/generate.js       POST manual trigger (fire-and-forget)
-    api/cron.js           daily Cron entry (gated by KV schedule.enabled)
-    api/schedule.js       GET/POST schedule
-    api/jobs.js           GET recent jobs
-  scripts/
-    get-refresh-token.js  one-time YouTube OAuth helper
-  styles/globals.css
-
-worker/
-  package.json            express + ffmpeg-static + @vercel/blob
-  server.js               POST /render (bearer-protected) → ffmpeg → storage
-  Dockerfile              node + full ffmpeg (with drawtext) + fonts
-  .env.example
-```
+- **Suno has no official API.** A Pro subscription gives you credits on
+  suno.com, not API access. This engine talks to a **self-hosted
+  [gcui-art/suno-api](https://github.com/gcui-art/suno-api)** wrapper that uses
+  *your own* Suno cookie, so your Pro credits are what get used. It's unofficial
+  and the cookie expires periodically — expect occasional re-pasting. A paid
+  third-party wrapper is supported too (`Mode = generic`).
+- **ChatGPT-free and Google Flow (Veo) free have no API.** Automating them means
+  browser-botting logins across accounts — against their terms and constantly
+  breaking. Lyrics therefore use the (very cheap) OpenAI API, and the video is
+  rendered locally with ffmpeg, which costs nothing.
+- **No website can save files onto your computer.** Browsers forbid it. So songs
+  go to **Google Drive**; to get them on your PC either install **Google Drive
+  for Desktop** (it syncs automatically — easiest) or run `tools/sync-local.js`.
+- **YouTube and repetitive AI content.** Channels that look mass-produced can get
+  demoted. The engine varies the angle, title, mood and tags on every song —
+  still, add human touches now and then.
 
 ---
 
-## Prerequisites (accounts & keys)
+## Setup
 
-1. **OpenAI** — API key from <https://platform.openai.com>.
-2. **Suno wrapper** — sign up with one of Apiframe / MusicAPI / Crazyrouter and get its base URL + API key. *(No official Suno API exists.)*
-3. **Gemini** — API key from <https://aistudio.google.com>.
-4. **Google Cloud / YouTube** — a project with **YouTube Data API v3** enabled and an **OAuth 2.0 Client** of type **Desktop app**.
-5. **Video storage** — either a **Vercel Blob** store (recommended) *or* just let the worker serve files from itself (fallback).
-6. Accounts on **Vercel** (web) and **Railway** or **Render** (worker).
+### 1. Redis (the shared database) — 2 minutes
+Vercel → your project → **Storage** → **Create Database** → **Redis / Upstash** →
+**Connect** to the project → **Redeploy**.
+This gives the project a `REDIS_URL`. The web app and the worker both use it.
+
+### 2. Google Cloud (one OAuth client covers login, YouTube, Drive)
+1. Enable **YouTube Data API v3** and **Google Drive API**.
+2. Create an OAuth client, type **Web application**.
+3. **Authorized JavaScript origins**: `https://<your-app>.vercel.app`
+4. **Authorized redirect URIs**: `https://<your-app>.vercel.app/api/oauth/youtube/callback`
+5. Add every user's Google account as a **Test user** on the consent screen.
+
+The Client **ID** is public and already shipped as a default (override with the
+`GOOGLE_CLIENT_ID` env var). The Client **secret** goes in the dashboard only.
+
+Scopes requested: `youtube.upload`, `youtube` (playlists), `youtube.readonly`,
+`drive.file` (only files this app creates).
+
+### 3. Deploy the web app (Vercel)
+Import the repo, root directory `web/`. Deploy. Then open it and
+**Sign in with Google** — the first account to sign in becomes the **owner**.
+Add other people under **Settings → Access** (they sign in with their own
+Google account; no password sharing).
+
+### 4. Deploy the worker (Railway or Render) — this is what does the work
+1. New Project → Deploy from GitHub → this repo → **root directory `worker/`**.
+2. It builds the `Dockerfile` (Node + full ffmpeg with `drawtext` + fonts).
+3. Set **one** env var: **`REDIS_URL`** — the exact same value as in Vercel.
+4. Deploy. `GET /health` should return `{"ok":true,...}`.
+
+The worker reads every API key from the same settings the dashboard writes, so
+there is nothing else to configure there.
+
+### 5. Self-host the Suno wrapper (uses your Suno Pro)
+1. Deploy [gcui-art/suno-api](https://github.com/gcui-art/suno-api) with its
+   "Deploy with Vercel" button.
+2. Get your Suno cookie: log in to suno.com → F12 → **Network** → a
+   `clerk.suno.com` request → **Request Headers** → copy the whole `Cookie`
+   value → set it as `SUNO_COOKIE` there → redeploy.
+   (Suno now shows captchas; you may also need `TWOCAPTCHA_KEY`.)
+3. Check `https://<your-suno-api>.vercel.app/api/get_limit` shows your credits.
+
+### 6. Fill in the dashboard
+**Settings** → paste and **Save**, then hit each **🧪 Test** button:
+
+| Section | What to enter |
+| --- | --- |
+| ✍️ Lyrics | OpenAI API key |
+| 🎵 Song | Your suno-api URL (Mode `suno-api`) |
+| 🖼️ Thumbnail | Gemini API key (free tier is fine) |
+| 🎬 Video worker | Your Railway/Render worker URL + a shared secret |
+| ⬆️ YouTube | Client secret, then **Connect YouTube channel** |
+| 🎼 Playlist & content | Playlist ID/URL + the subject every song should be about |
+| 💾 Storage | Drive folder name, how many songs to keep (default 4) |
+
+### 7. Go
+- **⚡ Generate Now** — one click, full pipeline, live progress.
+- **Daily schedule** — flip the toggle on. The cron time lives in
+  `web/vercel.json` (`0 14 * * *` = 14:00 UTC); change it there and redeploy.
 
 ---
 
-## Setup — step by step
+## Playlist-driven content
 
-### 1. Deploy the worker first (Railway or Render)
+Set **Playlist ID/URL** and **Playlist subject** in Settings. Then:
+- every song is written *about that subject*, with a different angle each run
+  (a memory, a celebration, a goodbye…) so tracks stay distinct;
+- after upload the video is **added to that playlist** automatically.
 
-The web app needs the worker's public URL, so build it first.
+Want a second category? Change the subject and playlist, and the next songs
+follow the new theme.
 
-**Local smoke test (optional):**
+## Storage & retention
+
+Every finished song stores three files in the Drive folder — `<jobId>__<title>.mp4`,
+`.mp3` and `.png`. After each successful run the worker keeps the **newest N
+songs** (default **4**) and permanently deletes everything older, so Drive never
+fills up. Change N in **Settings → Storage**.
+
+## Getting songs onto your computer
+
+**Easiest:** install **Google Drive for Desktop** and pick where the Drive
+folder lives — new songs appear there automatically.
+
+**Or** run the included downloader on your PC:
 ```bash
-cd worker
+cd tools
 npm install
-WORKER_SECRET=devsecret PUBLIC_BASE_URL=http://localhost:3001 npm start
-# in another shell:
-curl -X POST http://localhost:3001/render \
-  -H "Authorization: Bearer devsecret" -H "Content-Type: application/json" \
-  -d '{"audioUrl":"https://download.samplelib.com/mp3/sample-9s.mp3","title":"Test Song"}'
-# → { "ok": true, "videoUrl": "...", "durationSec": ... }
+YT_CLIENT_ID=... YT_CLIENT_SECRET=... YT_REFRESH_TOKEN=... \
+LOCAL_SAVE_PATH="D:\\Songs" node sync-local.js
 ```
-
-> **ffmpeg note:** the Docker image installs a **full ffmpeg** (with the `drawtext` filter) so the title overlay renders. The npm `ffmpeg-static` binary lacks `drawtext`; the worker auto-detects this and simply **skips the title overlay** rather than failing, so it still works locally even without a system ffmpeg.
-
-**Deploy (Railway example):**
-1. New Project → Deploy from GitHub repo → pick this repo, set **root directory** to `worker/`.
-2. Railway builds the `Dockerfile` automatically.
-3. Set env vars:
-   - `WORKER_SECRET` — a long random string (remember it; the web app must match).
-   - **Storage — pick one:**
-     - `BLOB_READ_WRITE_TOKEN` — from a Vercel Blob store *(recommended)*, **or**
-     - `PUBLIC_BASE_URL` — the worker's own public URL (Railway gives you one), used by the local-file fallback.
-4. Deploy → copy the public URL, e.g. `https://your-worker.up.railway.app`.
-
-Render is equivalent: **New → Web Service → Docker**, root `worker/`, same env vars.
-
-### 2. Deploy the web app (Vercel)
-
-1. **Import** the repo in Vercel, set **root directory** to `web/`.
-2. **Attach a KV store:** Vercel dashboard → Storage → create **KV** (Upstash Redis) and connect it to the project. This auto-injects `KV_REST_API_URL` and `KV_REST_API_TOKEN`. **This is the only thing you must set in Vercel.**
-3. Deploy.
-
-### 2b. Log in with Google + configure keys in the dashboard
-
-**Login is "Sign in with Google"** — no passwords. You set exactly **one** value in Vercel for this: the env var **`GOOGLE_CLIENT_ID`** (public, not a secret; it's the same OAuth client you create for YouTube in step 3). Everything else is entered inside the dashboard.
-
-1. In Vercel → Settings → Environment Variables, set `GOOGLE_CLIENT_ID` to your Google OAuth client's ID, and redeploy.
-2. Open the site → **Sign in with Google**. The **first account to sign in becomes the owner**.
-3. Go to **⚙️ Settings** and paste in each value: OpenAI key, Suno provider URL + key, Gemini key, Worker URL + secret. YouTube is connected with a button (step 3). Secrets are stored in KV and shown masked.
-4. **Sharing access:** in **Settings → Access**, the owner adds other people's Google emails. They then sign in with their own Google account — nothing to share, and access can be revoked anytime.
-5. The dashboard's **Setup status** row shows which steps are ready.
-
-> API keys can still be provided as Vercel env vars if you prefer (see `web/.env.example`) — a Settings value overrides the matching env var. `GOOGLE_CLIENT_ID` (login) must be an env var; `CRON_SECRET` (protects the daily cron) is recommended.
-
-### 3. Connect YouTube — one click from the dashboard (recommended)
-
-You do **not** need to run any script. The dashboard has a **🔗 Connect YouTube channel** button on the Settings page that runs the whole OAuth flow in the browser and stores the refresh token for you.
-
-One-time Google Cloud setup — **one OAuth client serves both login and YouTube**:
-1. In Google Cloud Console, enable **YouTube Data API v3**.
-2. Create an **OAuth client** of type **Web application**.
-3. Under **Authorized JavaScript origins** add `https://<your-app>.vercel.app` (powers the Google login button).
-4. Under **Authorized redirect URIs** add `https://<your-app>.vercel.app/api/oauth/youtube/callback` (the Settings page shows the exact value).
-5. Use the client's **ID** as the `GOOGLE_CLIENT_ID` env var (login) **and** paste the same **ID + secret** into **Settings → YouTube upload** (uploads); Save, then click **Connect YouTube channel**.
-6. On the OAuth consent screen, add every person's Google account (yours + anyone in Access) as a **Test user** (or publish the app).
-
-Google will show an **account chooser** — pick the account that owns the channel you want to publish to. After approving, the Settings page shows **“Connected as: <channel name>”** so you can confirm who has access. A **Change account** / **Disconnect** control lets you switch or revoke.
-
-- Scopes requested: `youtube.upload` (upload) + `youtube.readonly` (to display the connected channel name).
-
-<details>
-<summary>Alternative: get the refresh token via a local script (Desktop OAuth client)</summary>
-
-```bash
-cd web
-npm install
-YT_CLIENT_ID=xxx YT_CLIENT_SECRET=yyy npm run get-refresh-token
-```
-Prints a consent URL; open it as the channel owner, paste the code back, and it prints a refresh token to store as `YT_REFRESH_TOKEN`. This uses a **Desktop app** OAuth client (out-of-band redirect). The in-app button above is easier and is the recommended path.
-</details>
-
-### 4. Test end-to-end, then enable the daily run
-
-1. Open the deployed dashboard → **Generate Now**. Watch the job walk through `lyrics → song → thumbnail → video → upload`.
-2. When a run reaches **upload** and you get a YouTube link, flip the **schedule toggle to Enabled**.
-3. The daily Cron (see below) will now run automatically.
+It polls Drive and saves anything new into that folder.
 
 ---
 
-## The daily schedule (important nuance)
+## API reference
 
-- The Cron **time** is fixed in `web/vercel.json`:
-  ```json
-  { "crons": [{ "path": "/api/cron", "schedule": "0 14 * * *" }] }
-  ```
-  That's **14:00 UTC** daily. Vercel Cron schedules are **static at deploy time** — they cannot be changed from the running app.
-- The dashboard's **Enabled/Disabled toggle** is the live **gate**: `/api/cron` checks `schedule.enabled` in KV and skips the run when off. Use it to pause/resume without redeploying.
-- The **hour/minute** fields in the dashboard are **informational** (stored in KV for reference). **To actually change when Cron fires, edit the cron expression in `vercel.json` and redeploy.**
-
-  Cron format is `minute hour day month weekday`, in **UTC**. e.g. `30 9 * * *` = 09:30 UTC daily.
-
----
-
-## API reference (web)
+**Web (Vercel)**
 
 | Route | Method | Purpose |
 | --- | --- | --- |
-| `/api/generate` | POST | Start a pipeline run now; returns `{ jobId }` immediately (202). |
-| `/api/cron` | GET | Vercel Cron entry; runs only if `schedule.enabled`. Requires `Bearer $CRON_SECRET`. |
-| `/api/schedule` | GET / POST | Read / update `{ enabled, hour, minute }`. |
-| `/api/jobs?limit=25` | GET | Recent jobs for the dashboard. |
+| `/api/generate` | POST | Create a job and enqueue it (returns instantly) |
+| `/api/cron` | GET | Vercel Cron entry; enqueues if the schedule is enabled |
+| `/api/jobs` | GET | Recent jobs + live progress |
+| `/api/job-action` | POST | `{ id, action: retry \| cancel \| delete }` |
+| `/api/config` | GET/POST | Settings (secrets masked) |
+| `/api/test?target=` | GET | Live check of `openai \| suno \| gemini \| worker` |
+| `/api/access` | GET/POST | Owner-only allowlist of Google emails |
+| `/api/youtube/status` | GET | Connected channel |
 
-Worker:
+**Worker**
 
-| Route | Method | Purpose |
-| --- | --- | --- |
-| `/render` | POST | `{ audioUrl, title, thumbnailBase64, durationSec? }` → `{ videoUrl, durationSec }`. Requires `Bearer $WORKER_SECRET`. |
-| `/health` | GET | Liveness check. |
+| Route | Purpose |
+| --- | --- |
+| `/health` | Uptime + processed/failed counters + current job |
 
----
+## Troubleshooting
 
-## Known risks & things to watch (please read)
-
-- **YouTube reach/monetization:** channels that look like mass-produced, repetitive AI content can get demoted or demonetized. The pipeline already **randomizes theme + genre** per run and varies titles/descriptions/tags — keep adding human variation (occasional manual titles/thumbnails) and don't upload obvious near-duplicates.
-- **Third-party Suno wrappers are unofficial.** They can break or lose Suno access without notice (vendor + ToS risk). `lib/song.js` fails loudly and marks the job errored so you get an alert on the dashboard; keep a second provider ready to swap via env vars.
-- **Serverless timeouts.** Vercel functions cap at ~10s (Hobby) / 60s+ (Pro). `/api/generate` and `/api/cron` therefore **kick off the pipeline and return immediately** (`202`) instead of blocking. For a **Hobby plan or heavier daily use, move `runPipeline()` onto a durable queue/worker** (e.g. run the whole pipeline inside the always-on worker, or use QStash/Inngest) so a frozen serverless function can't kill a run mid-way. See "Scaling" below.
-- **The YouTube refresh token is a production secret.** It's long-lived and grants uploads to the channel. Store it only in the host's secret manager, restrict the scope to `youtube.upload`, and rotate it if leaked.
-- **Cost.** OpenAI + the Suno wrapper are the paid pieces; Gemini image + YouTube API + your own ffmpeg worker are effectively free. One song/day is cheap, but watch the Suno wrapper's per-generation pricing.
-
-## Scaling / hardening (beyond MVP)
-
-- Run the **entire pipeline inside the worker** (it's already always-on) and have `/api/generate` just enqueue a request — removes the serverless-timeout risk entirely.
-- Add a **notification** (email/Discord/Slack) on job failure so a broken Suno provider is visible immediately.
-- Add **retry with backoff** around the Suno poll and the YouTube upload.
-- Persist rendered videos to durable storage (Vercel Blob / S3) rather than the worker's ephemeral disk if you use the local-file fallback.
-
----
+| Symptom | Cause / fix |
+| --- | --- |
+| Job stuck at "Waiting for the worker" | The worker isn't running. Check its `/health` and that `REDIS_URL` matches Vercel's. |
+| "Attach a Vercel KV store" on login | No Redis connected yet, or the app wasn't redeployed after connecting it. |
+| Google login button errors | The app origin isn't in **Authorized JavaScript origins**. |
+| Song step fails | Suno cookie expired or captcha — re-paste `SUNO_COOKIE`; check `/api/get_limit`. |
+| Playlist not updated | Reconnect YouTube in Settings so the token picks up the `youtube` scope. |
+| Thumbnail step warns | Non-fatal — the video falls back to a gradient background. |
 
 ## Local development
 
 ```bash
-# web
 cd web && npm install && npm run dev      # http://localhost:3000
-# (without KV env vars it uses an in-memory job store — state resets on restart)
-
-# worker
-cd worker && npm install && npm start     # http://localhost:3001
+cd worker && npm install && REDIS_URL=redis://127.0.0.1:6379 npm start
 ```
 
----
-
-*Nothing in this repo commits secrets — real values go in host env vars only. `.env.example` files document every variable.*
+*No secrets are committed. Real values live in the dashboard (Redis) or host env vars.*
