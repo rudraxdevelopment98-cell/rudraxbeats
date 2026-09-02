@@ -2,21 +2,21 @@
 // uploadToYoutube() - uploads the rendered mp4 to YouTube via the Data API v3
 // using a long-lived OAuth2 refresh token, then sets the custom thumbnail.
 //
-// Scope required: https://www.googleapis.com/auth/youtube.upload
-// (thumbnails.set also works under youtube.upload for videos you own.)
+// Scope required: https://www.googleapis.com/auth/youtube (see YT_SCOPES).
 
 import { google } from 'googleapis';
 import { Readable } from 'stream';
 import { getConfig } from './config.js';
 
-// Scopes: upload videos + read the channel identity (to show "connected as").
 export const YT_SCOPES = [
-  'https://www.googleapis.com/auth/youtube.upload',
-  'https://www.googleapis.com/auth/youtube.readonly',
+  // ONE YouTube scope only. Google refuses a consent request that mixes
+  // youtube.upload with youtube / youtube.readonly ("scopes that cannot be
+  // requested together"). The broad `youtube` scope already covers everything
+  // this app does: videos.insert (upload), thumbnails.set, channels.list(mine)
+  // and playlistItems.insert.
+  'https://www.googleapis.com/auth/youtube',
   // Drive storage for the generated audio/video (app-created files only).
   'https://www.googleapis.com/auth/drive.file',
-  // Needed to add uploaded videos to a playlist.
-  'https://www.googleapis.com/auth/youtube',
 ];
 
 function getYouTubeClient(cfg) {

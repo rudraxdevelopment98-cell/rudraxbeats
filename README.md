@@ -76,8 +76,11 @@ This gives the project a `REDIS_URL`. The web app and the worker both use it.
 The Client **ID** is public and already shipped as a default (override with the
 `GOOGLE_CLIENT_ID` env var). The Client **secret** goes in the dashboard only.
 
-Scopes requested: `youtube.upload`, `youtube` (playlists), `youtube.readonly`,
-`drive.file` (only files this app creates).
+Scopes requested: **`youtube`** and **`drive.file`** (only files this app creates).
+Just one YouTube scope on purpose — Google rejects a consent request that mixes
+`youtube.upload` with `youtube`/`youtube.readonly` ("scopes that cannot be
+requested together"), and the broad `youtube` scope already covers upload,
+thumbnails, reading the channel and playlist inserts.
 
 ### 3. Deploy the web app (Vercel)
 Import the repo, root directory `web/`. Deploy. Then open it and
@@ -266,6 +269,7 @@ It polls Drive and saves anything new into that folder.
 | Google login button errors | The app origin isn't in **Authorized JavaScript origins**. |
 | Song step fails | Suno cookie expired or captcha — re-paste `SUNO_COOKIE`; check `/api/get_limit`. |
 | Playlist not updated | Reconnect YouTube in Settings so the token picks up the `youtube` scope. |
+| "scopes that cannot be requested together" | An old token/consent mixing YouTube scopes. The app now requests only `youtube` + `drive.file` — just hit **Connect YouTube channel** again. |
 | Thumbnail step warns | Non-fatal — the video falls back to a gradient background. |
 
 ## Local development
