@@ -12,11 +12,14 @@ const fs = require('fs');
 const { google } = require('googleapis');
 
 function driveClient(cfg) {
-  if (!cfg.ytClientId || !cfg.ytClientSecret || !cfg.ytRefreshToken) {
-    throw new Error('Google account not connected (Settings → Connect YouTube)');
+  // Drive has its OWN refresh token: Google will not issue one token covering
+  // both YouTube and Drive scopes, so they are connected separately.
+  const refresh = cfg.driveRefreshToken;
+  if (!cfg.ytClientId || !cfg.ytClientSecret || !refresh) {
+    throw new Error('Google Drive not connected (Settings → Connect Google Drive)');
   }
   const oauth2 = new google.auth.OAuth2(cfg.ytClientId, cfg.ytClientSecret);
-  oauth2.setCredentials({ refresh_token: cfg.ytRefreshToken });
+  oauth2.setCredentials({ refresh_token: refresh });
   return google.drive({ version: 'v3', auth: oauth2 });
 }
 

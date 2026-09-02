@@ -49,6 +49,7 @@ export const FIELDS = {
   songLanguage: { env: 'SONG_LANGUAGE', default: 'Gujarati', label: 'Song language', group: 'Playlist & content' },
 
   // Storage (Google Drive) + local sync
+  driveRefreshToken: { env: 'DRIVE_REFRESH_TOKEN', secret: true, label: 'Drive Refresh Token (use Connect Drive above)', group: 'Storage (Google Drive)' },
   driveFolderName: { env: 'DRIVE_FOLDER_NAME', default: 'AI Song Engine', label: 'Drive folder name', group: 'Storage (Google Drive)' },
   driveKeepSongs: { env: 'DRIVE_KEEP_SONGS', default: '4', label: 'Keep last N songs in Drive (older auto-deleted)', group: 'Storage (Google Drive)' },
   localSavePath: { env: 'LOCAL_SAVE_PATH', default: '', label: 'Local folder path (for the sync script)', group: 'Storage (Google Drive)' },

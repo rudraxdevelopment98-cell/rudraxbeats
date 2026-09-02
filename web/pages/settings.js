@@ -20,6 +20,11 @@ const GROUP_TEST = {
   'Thumbnail (Gemini)': 'gemini',
   'Video worker': 'worker',
 };
+const DRIVE_MSG = {
+  connected: { ok: true, text: '✅ Google Drive connected.' },
+  norefresh: { ok: false, text: 'Google returned no refresh token — revoke at myaccount.google.com/permissions and reconnect.' },
+  error: { ok: false, text: '⚠ Could not connect Drive' },
+};
 const YT_MSG = {
   connected: { ok: true, text: '✅ YouTube channel connected.' },
   norefresh: { ok: false, text: 'Google returned no refresh token — revoke at myaccount.google.com/permissions and reconnect.' },
@@ -110,6 +115,8 @@ export default function Settings() {
 
   const ytParam = router.query.youtube;
   const ytMsg = ytParam ? YT_MSG[ytParam] : null;
+  const driveParam = router.query.drive;
+  const driveMsg = driveParam ? DRIVE_MSG[driveParam] : null;
   const origin = yt?.redirectUri ? new URL(yt.redirectUri).origin : '';
 
   return (
@@ -198,6 +205,40 @@ export default function Settings() {
               </ol>
             </div>
           </details>
+        </Card>
+
+        {/* GOOGLE DRIVE (separate consent from YouTube) */}
+        <Card delay={0.12}>
+          <div className="card-title">💾 Connect Google Drive</div>
+          {yt && yt.driveConnected ? (
+            <div className="row">
+              <div>
+                <div style={{ fontWeight: 600 }}>Drive connected ✓</div>
+                <div className="job-meta">
+                  Songs are stored in “{fields.driveFolderName?.value || 'AI Song Engine'}”,
+                  keeping the newest {fields.driveKeepSongs?.value || 4}.
+                </div>
+              </div>
+              <span className="spacer" />
+              <a className="btn ghost" href="/api/oauth/youtube/start?service=drive" style={{ padding: '8px 14px' }}>Reconnect</a>
+            </div>
+          ) : (
+            <>
+              <p style={{ color: 'var(--muted)', fontSize: 14, marginTop: 0 }}>
+                A <b>second, separate</b> sign-in — Google does not allow YouTube and
+                Drive permissions in the same consent screen. Use the same account.
+              </p>
+              <motion.a className="btn lg" href="/api/oauth/youtube/start?service=drive"
+                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} style={{ display: 'inline-flex' }}>
+                💾 Connect Google Drive
+              </motion.a>
+            </>
+          )}
+          {driveMsg && (
+            <div className={driveMsg.ok ? 'ok-note' : 'notice'} style={{ marginTop: 14 }}>
+              {driveMsg.text}{driveParam === 'error' && router.query.reason ? `: ${router.query.reason}` : ''}
+            </div>
+          )}
         </Card>
 
         {/* API KEY GROUPS */}

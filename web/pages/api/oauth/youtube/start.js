@@ -1,6 +1,9 @@
 // pages/api/oauth/youtube/start.js
-// GET (auth-guarded) -> redirects the browser to Google's consent screen.
-// Google shows an account chooser so the user picks WHICH channel to connect.
+// GET ?service=youtube|drive  (auth-guarded) -> Google consent screen.
+//
+// Google refuses a consent request that mixes YouTube scopes with other Google
+// APIs, so YouTube and Drive are connected in two separate flows. Both reuse
+// this single registered redirect URI; the chosen service travels in `state`.
 
 import { getConfig } from '../../../../lib/config.js';
 import { buildConsentUrl } from '../../../../lib/youtube.js';
@@ -13,8 +16,8 @@ export default async function handler(req, res) {
   if (!cfg.ytClientId || !cfg.ytClientSecret) {
     return res
       .status(400)
-      .send('Enter the YouTube Client ID and Client Secret in Settings and Save first, then click Connect.');
+      .send('Enter the Google OAuth Client ID and Client Secret in Settings and Save first.');
   }
-  const url = buildConsentUrl(cfg, callbackUri(req));
-  res.redirect(url);
+  const service = req.query.service === 'drive' ? 'drive' : 'youtube';
+  res.redirect(buildConsentUrl(cfg, callbackUri(req), service));
 }

@@ -8,16 +8,19 @@ import { google } from 'googleapis';
 import { Readable } from 'stream';
 import { getConfig } from './config.js';
 
-export const YT_SCOPES = [
-  // ONE YouTube scope only. Google refuses a consent request that mixes
-  // youtube.upload with youtube / youtube.readonly ("scopes that cannot be
-  // requested together"). The broad `youtube` scope already covers everything
-  // this app does: videos.insert (upload), thumbnails.set, channels.list(mine)
-  // and playlistItems.insert.
-  'https://www.googleapis.com/auth/youtube',
-  // Drive storage for the generated audio/video (app-created files only).
-  'https://www.googleapis.com/auth/drive.file',
-];
+// Google refuses a consent request that mixes YouTube scopes with ANY other
+// Google API scope (and refuses mixing youtube.upload with youtube). So we run
+// TWO separate consent flows and store TWO refresh tokens:
+//   - YouTube: the single broad `youtube` scope covers videos.insert (upload),
+//     thumbnails.set, channels.list(mine) and playlistItems.insert.
+//   - Drive:   `drive.file` - only files this app itself creates.
+export const YT_SCOPES = ['https://www.googleapis.com/auth/youtube'];
+export const DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive.file'];
+
+/** Scope set for a given connect flow. */
+export function scopesFor(service) {
+  return service === 'drive' ? DRIVE_SCOPES : YT_SCOPES;
+}
 
 function getYouTubeClient(cfg) {
   if (!cfg.ytClientId || !cfg.ytClientSecret || !cfg.ytRefreshToken) {
@@ -41,12 +44,16 @@ function oauthClient(cfg, redirectUri) {
  * Google account / channel to grant access to; `offline` + `consent` ensure
  * a refresh_token is always returned.
  */
-export function buildConsentUrl(cfg, redirectUri) {
+export function buildConsentUrl(cfg, redirectUri, service = 'youtube') {
   return oauthClient(cfg, redirectUri).generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent select_account',
-    scope: YT_SCOPES,
-    include_granted_scopes: true,
+    scope: scopesFor(service),
+    // Must stay false: including previously granted scopes would re-mix
+    // YouTube and Drive scopes and trigger Google's "cannot be requested
+    // together" error again.
+    include_granted_scopes: false,
+    state: service,
   });
 }
 

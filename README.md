@@ -76,11 +76,18 @@ This gives the project a `REDIS_URL`. The web app and the worker both use it.
 The Client **ID** is public and already shipped as a default (override with the
 `GOOGLE_CLIENT_ID` env var). The Client **secret** goes in the dashboard only.
 
-Scopes requested: **`youtube`** and **`drive.file`** (only files this app creates).
-Just one YouTube scope on purpose — Google rejects a consent request that mixes
-`youtube.upload` with `youtube`/`youtube.readonly` ("scopes that cannot be
-requested together"), and the broad `youtube` scope already covers upload,
-thumbnails, reading the channel and playlist inserts.
+**Two separate connect buttons, by design.** Google refuses any consent request
+that mixes YouTube scopes with another Google API — and even refuses mixing
+`youtube.upload` with `youtube`. So the dashboard runs two flows against the
+same OAuth client and stores two refresh tokens:
+
+| Button | Scope | Covers |
+| --- | --- | --- |
+| 🔗 Connect YouTube channel | `youtube` | upload, thumbnail, channel name, playlist add |
+| 💾 Connect Google Drive | `drive.file` | storing songs (only files this app creates) |
+
+Both use the same registered redirect URI; the flow is identified by the OAuth
+`state` parameter. Sign in with the same Google account for both.
 
 ### 3. Deploy the web app (Vercel)
 Import the repo, root directory `web/`. Deploy. Then open it and
@@ -269,7 +276,8 @@ It polls Drive and saves anything new into that folder.
 | Google login button errors | The app origin isn't in **Authorized JavaScript origins**. |
 | Song step fails | Suno cookie expired or captcha — re-paste `SUNO_COOKIE`; check `/api/get_limit`. |
 | Playlist not updated | Reconnect YouTube in Settings so the token picks up the `youtube` scope. |
-| "scopes that cannot be requested together" | An old token/consent mixing YouTube scopes. The app now requests only `youtube` + `drive.file` — just hit **Connect YouTube channel** again. |
+| "scopes that cannot be requested together" | Google never allows YouTube scopes alongside other Google APIs. The app now uses two separate flows — click **Connect YouTube channel** and **Connect Google Drive** one after the other. |
+| Drive step warns "not connected" | Click **Connect Google Drive** in Settings — it is a second sign-in, separate from YouTube. |
 | Thumbnail step warns | Non-fatal — the video falls back to a gradient background. |
 
 ## Local development
