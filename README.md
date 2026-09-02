@@ -6,19 +6,20 @@ stores it in Google Drive, uploads to YouTube and adds it to your playlist —
 with live progress in a dashboard.
 
 ```
-   Dashboard "Generate Now"          Vercel Cron (daily)
+   Dashboard "Generate Now"      Autopilot (daily, in YOUR timezone)
               │                              │
               └───────────► Redis queue ◄────┘        (Vercel only enqueues —
                                  │                      it never runs the work)
                                  ▼
-                    ALWAYS-ON WORKER  (Railway / Render)
+                    ALWAYS-ON WORKER  (your PC / Railway / Render)
                                  │
    ①  lyrics      OpenAI ─────── writes a song about your playlist's subject
    ②  song        Suno wrapper ─ your own Suno Pro account
    ③  cover art   Gemini image
-   ④  video       ffmpeg ─────── Ken-Burns still + waveform + title
+   ④  video       Gemini + ffmpeg  AI scene shots, Ken-Burns + cross-fades
    ⑤  storage     Google Drive ─ keeps the newest N songs, deletes older
    ⑥  publish     YouTube ────── upload + thumbnail + add to playlist
+   ⑦  archive     your PC ────── the finished files land in your own folder
                                  │
                                  ▼
                  progress written to Redis after every stage
@@ -50,9 +51,9 @@ queue; the always-on worker does all the long work. This is what makes
   browser-botting logins across accounts — against their terms and constantly
   breaking. Lyrics therefore use the (very cheap) OpenAI API, and the video is
   rendered locally with ffmpeg, which costs nothing.
-- **No website can save files onto your computer.** Browsers forbid it. So songs
-  go to **Google Drive**; to get them on your PC either install **Google Drive
-  for Desktop** (it syncs automatically — easiest) or run `tools/sync-local.js`.
+- **A website can't write to your computer, but the worker can.** The worker app
+  runs *on* your PC, so it copies every finished song into the folder you choose
+  in Settings. (Drive is still used as the cloud copy, with retention.)
 - **YouTube and repetitive AI content.** Channels that look mass-produced can get
   demoted. The engine varies the angle, title, mood and tags on every song —
   still, add human touches now and then.
@@ -201,16 +202,45 @@ Set **Playlist ID/URL** and **Playlist subject** in Settings. Then:
 Want a second category? Change the subject and playlist, and the next songs
 follow the new theme.
 
-## Video source — hand-made clips (Flow AI etc.) or the cover image
+## Hands-free — what runs without you
 
-Tools like Flow AI cap how many clips you can make per day, so the engine treats
-clips as an **optional upgrade** rather than a requirement:
+Everything below happens on its own; none of it needs a click.
+
+| What | How it works |
+| --- | --- |
+| **Daily songs** | The worker fires the run itself at the time set in the dashboard, read in **your timezone** (Settings → 🤖 Autopilot). Changing the time takes effect immediately — no redeploy. `Songs per day` queues more than one. |
+| **Video** | No clips needed: AI scenes are painted and animated automatically (see below). |
+| **Failures** | A failed run retries by itself with a growing back-off (3 min → 15 min → 45 min), `Automatic retries` times. The dashboard shows the next retry instead of asking you to press Retry. |
+| **Reboots / crashes** | On start-up the worker re-queues any song that was left half-finished, and any job that was enqueued while the PC was off. |
+| **Storage** | Drive keeps the newest N songs and deletes older ones; the PC copy is written automatically. |
+| **Double runs** | The dashboard cron and the worker's own scheduler claim the same daily key in Redis, so a day can only ever fire once. Vercel's cron only steps in when the worker is offline. |
+
+**The one thing that can still need you:** the Suno cookie in your
+`suno-api` deployment expires every few weeks. When Suno starts rejecting
+requests the dashboard shows a single amber banner telling you to paste a fresh
+cookie — nothing else in the pipeline ever asks for attention.
+
+## Video source — AI scenes by default, hand-made clips optional
+
+Flow AI caps how many clips you can make per day, so clips are an **optional
+upgrade**, never a requirement. With no clips at all the engine still produces a
+moving music video: it writes its own shot list, paints each shot with the same
+Gemini key used for the cover, gives every image a Ken-Burns move (zoom in, pan,
+zoom out, pan back) and cross-fades them under the song.
 
 | Mode (Settings → 🎬 Video source) | What happens |
 | --- | --- |
-| `auto` *(default)* | Use clips when the folder has some, otherwise the cover image. |
-| `clips` | Prefer clips; still falls back to the cover image rather than failing. |
-| `thumbnail` | Always the generated cover image + waveform. |
+| `auto` *(default)* | Clips when the folder has some → otherwise **AI scenes** → otherwise the cover image. |
+| `scenes` | Always the AI scene video (no clips needed, nothing to do by hand). |
+| `clips` | Prefer clips; falls back to AI scenes, then the cover image. |
+| `thumbnail` | Always the generated cover image + waveform (cheapest, fastest). |
+
+`AI scenes per song` (default 4) and `Seconds per scene` (default 8) control the
+length and cost of the montage; four scenes ≈ four Gemini images per song.
+
+> Rendering note: the Ken-Burns move uses an animated `scale`/`crop` instead of
+> ffmpeg's `zoompan`, which benchmarked ~17× slower for the same result — that
+> difference is the whole reason a full video renders in seconds on a home PC.
 
 **How to feed it clips:** drop the videos you made into the **`clips`** folder
 next to the worker app (it is created on first run, with a note inside). The
@@ -254,17 +284,17 @@ fills up. Change N in **Settings → Storage**.
 
 ## Getting songs onto your computer
 
-**Easiest:** install **Google Drive for Desktop** and pick where the Drive
-folder lives — new songs appear there automatically.
+Automatic — the worker runs on your PC, so it just writes the files there. Set
+**Settings → 💾 Storage → Local folder** to something like `D:\Songs`; leave it
+blank and it uses a `Songs` folder next to the worker app. Each song becomes:
 
-**Or** run the included downloader on your PC:
-```bash
-cd tools
-npm install
-YT_CLIENT_ID=... YT_CLIENT_SECRET=... YT_REFRESH_TOKEN=... \
-LOCAL_SAVE_PATH="D:\\Songs" node sync-local.js
 ```
-It polls Drive and saves anything new into that folder.
+D:\Songs\2026-09-02 ગીતનું નામ\
+    video.mp4      song.mp3      cover.png      lyrics.txt
+```
+
+`tools/sync-local.js` (Drive → folder) is still there for a worker that runs in
+the cloud instead of on your PC, but it is no longer part of the normal setup.
 
 ---
 

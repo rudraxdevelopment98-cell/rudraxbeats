@@ -106,10 +106,18 @@ async function getConfig() {
 
     videoMode: pick('videoMode', 'VIDEO_MODE', 'auto'),
     clipsPerSong: parseInt(pick('clipsPerSong', 'CLIPS_PER_SONG', '3'), 10) || 3,
+    sceneCount: parseInt(pick('sceneCount', 'SCENE_COUNT', '4'), 10) || 4,
+    sceneSeconds: parseInt(pick('sceneSeconds', 'SCENE_SECONDS', '8'), 10) || 8,
+
+    // hands-free behaviour
+    autoRetries: Math.max(0, parseInt(pick('autoRetries', 'AUTO_RETRIES', '2'), 10) || 0),
+    songsPerDay: Math.max(1, parseInt(pick('songsPerDay', 'SONGS_PER_DAY', '1'), 10) || 1),
+    timezone: pick('timezone', 'TIMEZONE', 'Asia/Kolkata'),
 
     driveRefreshToken: pick('driveRefreshToken', 'DRIVE_REFRESH_TOKEN'),
     driveFolderName: pick('driveFolderName', 'DRIVE_FOLDER_NAME', 'AI Song Engine'),
     driveKeepSongs: parseInt(pick('driveKeepSongs', 'DRIVE_KEEP_SONGS', '4'), 10) || 4,
+    localSavePath: pick('localSavePath', 'LOCAL_SAVE_PATH'),
   };
 }
 
@@ -128,4 +136,117 @@ async function beat(extra = {}) {
   await client.set('worker:heartbeat', JSON.stringify(payload), 'EX', 90);
 }
 
-module.exports = { client, STEPS, getJob, setJob, updateJob, popQueue, getConfig, beat };
+// --------------------------------------------------------- autopilot ------
+// The worker is the only always-on part of the system, so it also owns the
+// daily schedule, crash recovery and automatic retries. Everything below keeps
+// the exact key layout the web app uses (values are JSON-encoded).
+
+const enc = (v) => JSON.stringify(v);
+
+const DEFAULT_SCHEDULE = { enabled: false, hour: 14, minute: 0 };
+
+async function getSchedule() {
+  const s = dec(await client.get('schedule'));
+  return s && typeof s === 'object' ? { ...DEFAULT_SCHEDULE, ...s } : { ...DEFAULT_SCHEDULE };
+}
+
+/** Push a job id onto the worker queue (same encoding as the web app). */
+async function enqueueJob(id) {
+  await client.lpush('jobs:queue', enc(id));
+  return id;
+}
+
+/** Ids of the most recent jobs, newest first. */
+async function listRecentJobIds(limit = 25) {
+  const arr = await client.lrange('jobs:index', 0, limit - 1);
+  return (arr || []).map(dec).filter(Boolean);
+}
+
+/**
+ * Create a job record exactly like the web app does, so the dashboard renders
+ * worker-created jobs (daily autopilot runs) identically.
+ */
+async function createJob(seed = {}) {
+  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date().toISOString();
+  const job = {
+    id,
+    status: 'queued',
+    step: null,
+    progress: 0,
+    note: 'Waiting for the worker to pick this up…',
+    trigger: seed.trigger || 'autopilot',
+    createdAt: now,
+    updatedAt: now,
+    error: null,
+    steps: STEPS.reduce((acc, s) => ({ ...acc, [s]: 'pending' }), {}),
+    title: null,
+    mood: null,
+    styleTags: null,
+    lyrics: null,
+    audioUrl: null,
+    videoUrl: null,
+    youtubeId: null,
+    youtubeUrl: null,
+    ...seed,
+  };
+  await setJob(id, job);
+  await client.lpush('jobs:index', enc(id));
+  return job;
+}
+
+/**
+ * Atomically claim a one-off action (e.g. "today's 14:00 run").
+ * Returns true only for the first caller - this is what stops the Vercel cron
+ * and the worker's own scheduler from both firing the same daily run.
+ */
+async function claim(key, ttlSec) {
+  const res = await client.set(key, '1', 'EX', ttlSec, 'NX');
+  return res === 'OK';
+}
+
+/** Re-run a job later (automatic retry after a transient failure). */
+async function scheduleRetry(id, atMs) {
+  await client.zadd('jobs:retry', String(atMs), id);
+}
+
+/** Pop every retry whose time has come. */
+async function dueRetries(now = Date.now()) {
+  const ids = await client.zrangebyscore('jobs:retry', '-inf', String(now));
+  if (!ids || !ids.length) return [];
+  await client.zrem('jobs:retry', ...ids);
+  return ids;
+}
+
+async function cancelRetry(id) {
+  await client.zrem('jobs:retry', id).catch(() => {});
+}
+
+/**
+ * A single banner the dashboard shows when something needs a human (the only
+ * case today: the Suno cookie has expired). Cleared on the next success.
+ */
+async function setAlert(text, kind = 'warn') {
+  if (!text) return client.del('worker:alert');
+  return client.set('worker:alert', enc({ text, kind, ts: Date.now() }), 'EX', 7 * 24 * 3600);
+}
+
+module.exports = {
+  client,
+  STEPS,
+  getJob,
+  setJob,
+  updateJob,
+  popQueue,
+  getConfig,
+  beat,
+  getSchedule,
+  enqueueJob,
+  createJob,
+  listRecentJobIds,
+  claim,
+  scheduleRetry,
+  dueRetries,
+  cancelRetry,
+  setAlert,
+};

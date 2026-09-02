@@ -4,7 +4,7 @@ import { useRouter } from 'next/router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Background, Nav, Card, MotionButton, Loader, fadeUp, stagger } from '../components/ui';
 
-const GROUP_ORDER = ['Lyrics (OpenAI)', 'Song (Suno)', 'Thumbnail (Gemini)', 'Video worker', 'YouTube upload', 'Playlist & content', 'Video source', 'Storage (Google Drive)'];
+const GROUP_ORDER = ['Lyrics (OpenAI)', 'Song (Suno)', 'Thumbnail (Gemini)', 'Video worker', 'YouTube upload', 'Playlist & content', 'Autopilot', 'Video source', 'Storage (Google Drive)'];
 const GROUP_ICON = {
   'Lyrics (OpenAI)': '✍️',
   'Song (Suno)': '🎵',
@@ -12,8 +12,14 @@ const GROUP_ICON = {
   'Video worker': '🎬',
   'YouTube upload': '⬆️',
   'Playlist & content': '🎼',
+  'Autopilot': '🤖',
   'Video source': '🎬',
   'Storage (Google Drive)': '💾',
+};
+const GROUP_HINT = {
+  'Autopilot': 'The worker fires the daily run itself, in this timezone. Failed runs retry on their own, so a bad night never needs a click.',
+  'Video source': 'auto = use hand-made clips if the worker has any, otherwise paint and animate AI scenes, otherwise the cover image. Nothing here needs Flow AI.',
+  'Storage (Google Drive)': 'Drive is the cloud copy (oldest songs auto-deleted). The local folder is written by the worker on your PC — leave it blank for a "Songs" folder next to the app.',
 };
 const GROUP_TEST = {
   'Lyrics (OpenAI)': 'openai',
@@ -367,6 +373,9 @@ export default function Settings() {
                   )}
                 </span>
               </div>
+              {GROUP_HINT[group] && (
+                <div className="hint" style={{ marginTop: -4, marginBottom: 14 }}>{GROUP_HINT[group]}</div>
+              )}
               {GROUP_TEST[group] && tests[GROUP_TEST[group]] && !tests[GROUP_TEST[group]].loading && (
                 <div className={tests[GROUP_TEST[group]].ok ? 'ok-note' : 'notice'} style={{ marginBottom: 14 }}>
                   {tests[GROUP_TEST[group]].ok ? '✓ ' : '✗ '}{tests[GROUP_TEST[group]].message}

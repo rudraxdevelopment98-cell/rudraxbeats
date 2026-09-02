@@ -7,6 +7,12 @@ import { Background, Nav, Card, MotionButton, Toggle, Loader, fadeUp, stagger } 
 const STEPS = ['lyrics', 'song', 'thumbnail', 'video', 'upload'];
 const STEP_ICON = { lyrics: '✍️', song: '🎵', thumbnail: '🖼️', video: '🎬', upload: '⬆️' };
 const READY_LABEL = { lyrics: 'OpenAI', song: 'Suno', thumbnail: 'Gemini', video: 'Worker', upload: 'YouTube' };
+const VIDEO_MODE_LABEL = {
+  auto: 'clips → AI scenes',
+  scenes: 'AI scenes',
+  clips: 'hand-made clips',
+  thumbnail: 'cover image',
+};
 
 function Segments({ steps }) {
   return (
@@ -78,16 +84,25 @@ function JobCard({ job, onAction, busy }) {
       )}
 
       {job.error ? <div className="job-err">⚠ {job.error}</div> : null}
+      {job.nextRetryAt && job.status === 'error' ? (
+        <div className="job-meta" style={{ marginTop: 6, color: 'var(--amber)' }}>
+          ↻ Retrying automatically at {new Date(job.nextRetryAt).toLocaleTimeString()} — nothing to do.
+        </div>
+      ) : null}
       {job.status === 'done' && (
         <div className="job-meta" style={{ marginTop: 8 }}>
-          {job.videoSource === 'clips' ? `🎬 ${job.clipsUsed} clip(s) used · ` : job.videoSource === 'thumbnail' ? '🖼️ cover-image video · ' : ''}
+          {job.videoSource === 'clips' ? `🎬 ${job.clipsUsed} clip(s) used · `
+            : job.videoSource === 'scenes' ? `🎨 ${job.scenesUsed} AI scenes · `
+              : '🖼️ cover-image video · '}
           {job.playlistAdded ? '🎼 Added to playlist · ' : ''}
           {job.driveFiles?.length ? `💾 ${job.driveFiles.length} file(s) in Drive` : ''}
+          {job.localDir ? ` · 📁 saved to ${job.localDir}` : ''}
         </div>
       )}
       {stalled && !job.error ? (
         <div className="job-err" style={{ color: 'var(--amber)', background: 'rgba(251,191,36,.08)', borderColor: 'rgba(251,191,36,.25)' }}>
-          ⏳ No progress for &gt;3 min. Check the worker is still running on your PC, then Retry.
+          ⏳ No progress for &gt;3 min. Long songs do this — and if the worker PC restarted it
+          picks this song back up by itself, so there is usually nothing to do.
         </div>
       ) : null}
       <div className="row" style={{ marginTop: 12, gap: 8 }}>
@@ -199,6 +214,8 @@ export default function Home() {
   };
 
   const allReady = readiness && STEPS.every((s) => readiness[s]);
+  const auto = readiness?.autopilot || null;
+  const alert = readiness?.alert || null;
 
   if (!ready) return <Loader />;
 
@@ -207,6 +224,15 @@ export default function Home() {
       <Background />
       <Nav user={user} />
       <div className="shell">
+        {/* The one thing that can still need a human: an expired Suno cookie. */}
+        <AnimatePresence>
+          {alert && (
+            <motion.div className="alert" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              ⚠ {alert.text}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* HERO */}
         <Card className="hero" delay={0.02}>
           <div className="eyebrow">DAILY · AUTOMATED</div>
@@ -262,23 +288,54 @@ export default function Home() {
           </Card>
         )}
 
-        {/* SCHEDULE */}
+        {/* AUTOPILOT */}
         <Card delay={0.12}>
-          <div className="card-title">Daily schedule</div>
+          <div className="card-title" style={{ justifyContent: 'space-between' }}>
+            <span>🤖 Autopilot</span>
+            {auto?.nextRun && schedule.enabled ? (
+              <span className="tag ok" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                next run {auto.nextRun}
+              </span>
+            ) : null}
+          </div>
           <div className="row">
             <Toggle on={schedule.enabled} onClick={() => saveSchedule({ enabled: !schedule.enabled })} />
             <span style={{ fontWeight: 600, color: schedule.enabled ? 'var(--green)' : 'var(--muted)' }}>
-              {schedule.enabled ? 'Enabled' : 'Disabled'}
+              {schedule.enabled ? 'Running every day, by itself' : 'Paused'}
             </span>
             <span className="spacer" />
-            <span style={{ color: 'var(--muted)', fontSize: 13 }}>Time (UTC)</span>
+            <span style={{ color: 'var(--muted)', fontSize: 13 }}>
+              Time ({auto?.timezone || 'your timezone'})
+            </span>
             <input className="input num" type="number" min="0" max="23" value={schedule.hour}
               onChange={(e) => setSchedule({ ...schedule, hour: Number(e.target.value) })} onBlur={() => saveSchedule({})} />
             <span>:</span>
             <input className="input num" type="number" min="0" max="59" value={schedule.minute}
               onChange={(e) => setSchedule({ ...schedule, minute: Number(e.target.value) })} onBlur={() => saveSchedule({})} />
           </div>
-          <div className="hint">The toggle pauses/resumes instantly. The exact fire time is set in <code>vercel.json</code> (needs a redeploy to change).</div>
+
+          <motion.div className="auto-grid" variants={stagger} initial="hidden" animate="show">
+            {[
+              ['🎬', 'Visuals', VIDEO_MODE_LABEL[auto?.videoMode || 'auto'] || 'AI scenes'],
+              ['🎵', 'Songs per day', auto?.songsPerDay ?? 1],
+              ['↻', 'Auto-retry', auto?.autoRetries ? `${auto.autoRetries}× on failure` : 'off'],
+              ['📁', 'Saved to PC', auto?.localSave ? 'yes' : 'not set'],
+            ].map(([ic, label, value]) => (
+              <motion.div key={label} className="auto-cell" variants={fadeUp}>
+                <div className="ic">{ic}</div>
+                <div>
+                  <div className="lbl">{label}</div>
+                  <div className="val">{value}</div>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
+
+          <div className="hint">
+            The worker on your PC fires the run itself at this time — changing it here takes
+            effect immediately, no redeploy. Failed runs retry on their own, and a PC restart
+            picks the song back up where it stopped.
+          </div>
         </Card>
 
         {/* JOBS */}

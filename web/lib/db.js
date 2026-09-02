@@ -69,6 +69,7 @@ function makeTcpStore(url) {
       // lpush stored JSON-encoded values, so match that encoding here.
       await client.lrem(key, count, JSON.stringify(val));
     },
+    raw: client,
   };
 }
 
@@ -108,6 +109,7 @@ const memStore = {
   async lrem(_key, _count, val) {
     mem.index = mem.index.filter((x) => x !== val);
   },
+  claims: new Set(),
 };
 
 const store = HAS_KV ? vercelKv : memStore;
@@ -228,6 +230,46 @@ export async function getWorkerHeartbeat() {
     return { online: ageSec < 90, ageSec, info };
   } catch (_) {
     return { online: false, ageSec: null, info: null };
+  }
+}
+
+/**
+ * Claim a one-off action (SET key 1 NX EX ttl). Only the first caller gets
+ * true, which is how the Vercel cron and the worker's own scheduler avoid
+ * firing the same day's run twice.
+ * @returns {Promise<boolean>}
+ */
+export async function claimOnce(key, ttlSec) {
+  try {
+    if (HAS_REST) {
+      const r = await vercelKv.set(key, 1, { nx: true, ex: ttlSec });
+      return r === 'OK' || r === true;
+    }
+    if (HAS_TCP) {
+      const r = await store.raw.set(key, '1', 'EX', ttlSec, 'NX');
+      return r === 'OK';
+    }
+    if (memStore.claims.has(key)) return false;
+    memStore.claims.add(key);
+    return true;
+  } catch (_) {
+    // If the claim itself fails, letting the run through beats skipping a day.
+    return true;
+  }
+}
+
+/**
+ * The worker raises a single banner when something genuinely needs a human
+ * (today: an expired Suno cookie). Cleared automatically on the next success.
+ * @returns {Promise<{text:string, kind:string, ts:number}|null>}
+ */
+export async function getWorkerAlert() {
+  try {
+    const raw = await store.get('worker:alert');
+    const a = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return a && a.text ? a : null;
+  } catch (_) {
+    return null;
   }
 }
 

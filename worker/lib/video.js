@@ -193,6 +193,50 @@ async function renderVideo({ audioFile, imageFile, titleFile, outFile, title, ti
 
 
 /**
+ * Second pass shared by every "moving picture" mode: take a finished montage
+ * (silent, 1080p30), loop it for the whole song, mux the audio and draw the
+ * title. `waveform` adds the audio-reactive bar used by the AI-scene mode.
+ */
+async function muxMontage({ montage, audioFile, titleFile, outFile, title, titleRoman, waveform = false }) {
+  const chosen = chooseTitle(title, titleRoman);
+  const drawOverlay = HAS_DRAWTEXT && titleFile && chosen.text;
+  if (drawOverlay) fsSync.writeFileSync(titleFile, sanitize(chosen.text));
+
+  const args = ['-y', '-stream_loop', '-1', '-i', montage, '-i', audioFile];
+
+  // Build the filter chain only when something actually needs filtering -
+  // a plain copy of the video stream is faster and can never fail on fonts.
+  const chain = [];
+  let last = '0:v';
+  if (waveform) {
+    chain.push(`[1:a]showwaves=s=1920x220:mode=cline:rate=30:colors=white@0.55[wave]`);
+    chain.push(`[${last}][wave]overlay=x=0:y=H-h-50[bgw]`);
+    last = 'bgw';
+  }
+  if (drawOverlay) {
+    chain.push(
+      `[${last}]drawtext=fontfile='${chosen.font}':textfile='${titleFile}':fontcolor=white:` +
+        `fontsize=64:box=1:boxcolor=black@0.45:boxborderw=24:x=(w-text_w)/2:y=90[v]`
+    );
+    last = 'v';
+  }
+  if (chain.length) {
+    args.push('-filter_complex', chain.join(';'), '-map', `[${last}]`);
+  } else {
+    args.push('-map', '0:v');
+  }
+  args.push(
+    '-map', '1:a',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '192k',
+    '-shortest', '-movflags', '+faststart',
+    outFile
+  );
+  await run(args);
+}
+
+/**
  * Build the video from real clips (e.g. made by hand in Flow AI) instead of a
  * still image.
  *
@@ -233,36 +277,135 @@ async function renderVideoFromClips({ clipPaths, audioFile, titleFile, outFile, 
   ]);
 
   // --- pass 2: loop to the song's length, add audio and the title ---------
-  const chosen = chooseTitle(title, titleRoman);
-  const drawOverlay = HAS_DRAWTEXT && titleFile && chosen.text;
-  if (drawOverlay) fsSync.writeFileSync(titleFile, sanitize(chosen.text));
-
-  const args = [
-    '-y',
-    '-stream_loop', '-1', '-i', base, // repeat the montage until the audio ends
-    '-i', audioFile,
-  ];
-  if (drawOverlay) {
-    args.push(
-      '-filter_complex',
-      `[0:v]drawtext=fontfile='${chosen.font}':textfile='${titleFile}':fontcolor=white:` +
-        `fontsize=64:box=1:boxcolor=black@0.45:boxborderw=24:x=(w-text_w)/2:y=90[v]`,
-      '-map', '[v]'
-    );
-  } else {
-    args.push('-map', '0:v');
-  }
-  args.push(
-    '-map', '1:a',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21',
-    '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-b:a', '192k',
-    '-shortest', '-movflags', '+faststart',
-    outFile
-  );
-  await run(args);
+  await muxMontage({ montage: base, audioFile, titleFile, outFile, title, titleRoman });
 
   return { durationSec: dur, clipsUsed: clipPaths.length };
+}
+
+// The working canvas for a moving shot: 1.25x of 1080p, which leaves room to
+// zoom or pan without ever showing an edge.
+const KB_W = 2400;
+const KB_H = 1350;
+const KB_RANGE = 0.18; // how far a shot zooms/pans over its whole length
+
+// Ken-Burns motions, cycled so consecutive scenes never move the same way.
+const KB_MOTIONS = ['zoom-in', 'pan-right', 'zoom-out', 'pan-left'];
+
+/**
+ * Turn one still image into a moving shot.
+ *
+ * Deliberately NOT ffmpeg's zoompan filter: zoompan re-scales the source for
+ * every output frame and measured ~17x slower here than an animated
+ * `scale=...:eval=frame` (a 4-scene video went from minutes to seconds), which
+ * matters a lot on a home PC that also has to encode the song.
+ */
+async function makeKenBurnsClip({ imageFile, outFile, seconds = 8, motion = 'zoom-in', workDir }) {
+  const dur = Math.max(2, seconds);
+  const dir = workDir || pathMod.dirname(outFile);
+  const base = pathMod.join(dir, `${pathMod.basename(outFile, pathMod.extname(outFile))}-base.png`);
+
+  // Scale to the working canvas once, not once per frame.
+  await run([
+    '-y', '-i', imageFile,
+    '-vf', `scale=${KB_W}:${KB_H}:force_original_aspect_ratio=increase,crop=${KB_W}:${KB_H}`,
+    '-frames:v', '1', base,
+  ]);
+
+  const p = `min(1,t/${dur})`; // 0 -> 1 across the shot, clamped on the last frame
+  let move;
+  switch (motion) {
+    case 'zoom-out':
+      move =
+        `scale=w='${KB_W}*(1+${KB_RANGE}*(1-${p}))':h='${KB_H}*(1+${KB_RANGE}*(1-${p}))':eval=frame,` +
+        `crop=1920:1080:x='(iw-ow)/2':y='(ih-oh)/2'`;
+      break;
+    case 'pan-right':
+      move = `crop=1920:1080:x='(iw-ow)*${p}':y='(ih-oh)/2'`;
+      break;
+    case 'pan-left':
+      move = `crop=1920:1080:x='(iw-ow)*(1-${p})':y='(ih-oh)/2'`;
+      break;
+    case 'zoom-in':
+    default:
+      move =
+        `scale=w='${KB_W}*(1+${KB_RANGE}*${p})':h='${KB_H}*(1+${KB_RANGE}*${p})':eval=frame,` +
+        `crop=1920:1080:x='(iw-ow)/2':y='(ih-oh)/2'`;
+  }
+
+  await run([
+    '-y',
+    '-loop', '1', '-t', String(dur), '-i', base,
+    '-filter_complex', `[0:v]${move},fps=30,setsar=1,format=yuv420p[v]`,
+    '-map', '[v]',
+    '-an',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+    '-pix_fmt', 'yuv420p',
+    outFile,
+  ]);
+  return outFile;
+}
+
+/**
+ * Fully automatic music video: several AI-generated scene images, each given a
+ * Ken-Burns move and cross-faded into the next, looped under the song.
+ *
+ * This is what makes the engine hands-free - no hand-made clips needed.
+ *
+ * @returns {Promise<{durationSec:number, scenesUsed:number}>}
+ */
+async function renderVideoFromScenes({
+  imagePaths, audioFile, titleFile, outFile, title, titleRoman, workDir, sceneSeconds = 8,
+}) {
+  if (!imagePaths || imagePaths.length === 0) throw new Error('no scene images supplied');
+  const dur = (await probeDuration(audioFile)) || 150;
+
+  // --- pass 1a: one Ken-Burns clip per image ------------------------------
+  const shots = [];
+  for (let i = 0; i < imagePaths.length; i++) {
+    const out = pathMod.join(workDir, `scene-${i}.mp4`);
+    await makeKenBurnsClip({
+      imageFile: imagePaths[i], outFile: out, seconds: sceneSeconds,
+      motion: KB_MOTIONS[i % KB_MOTIONS.length], workDir,
+    });
+    shots.push(out);
+  }
+
+  // --- pass 1b: cross-fade the shots into one montage ----------------------
+  const base = pathMod.join(workDir, 'montage.mp4');
+  const XF = 1.2; // cross-fade length in seconds
+  if (shots.length === 1) {
+    await fsSync.promises.copyFile(shots[0], base);
+  } else {
+    const inputs = [];
+    shots.forEach((s) => inputs.push('-i', s));
+    const steps = [];
+    let cur = '[0:v]';
+    let offset = sceneSeconds - XF;
+    for (let i = 1; i < shots.length; i++) {
+      const out = i === shots.length - 1 ? '[vout]' : `[x${i}]`;
+      steps.push(`${cur}[${i}:v]xfade=transition=fade:duration=${XF}:offset=${offset.toFixed(2)}${out}`);
+      cur = out;
+      offset += sceneSeconds - XF;
+    }
+    const encode = ['-map', '[vout]', '-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', base];
+    try {
+      await run(['-y', ...inputs, '-filter_complex', steps.join(';'), ...encode]);
+    } catch (e) {
+      // xfade is picky about odd input combinations; a hard cut still ships.
+      console.warn(`scene cross-fade failed (${e.message.slice(0, 120)}), using hard cuts`);
+      const cat = shots.map((_, i) => `[${i}:v]`).join('');
+      await run([
+        '-y', ...inputs,
+        '-filter_complex', `${cat}concat=n=${shots.length}:v=1:a=0[vout]`,
+        ...encode,
+      ]);
+    }
+  }
+
+  // --- pass 2: loop under the song, waveform + title ----------------------
+  await muxMontage({ montage: base, audioFile, titleFile, outFile, title, titleRoman, waveform: true });
+
+  return { durationSec: dur, scenesUsed: imagePaths.length };
 }
 
 /** Solid gradient fallback if no thumbnail was produced. */
@@ -277,8 +420,11 @@ async function makeFallbackImage(outFile) {
 module.exports = {
   renderVideo,
   renderVideoFromClips,
+  renderVideoFromScenes,
+  makeKenBurnsClip,
   makeFallbackImage,
   sanitize,
+  probeDuration,
   ffmpegPath,
   HAS_DRAWTEXT,
   FONT_PATH,

@@ -9,7 +9,7 @@
 // Secret fields are never returned in full to the browser - getPublicConfig()
 // returns only { set, hint } for them.
 
-import { kvConfigured, kvStore, getWorkerHeartbeat } from './db.js';
+import { kvConfigured, kvStore, getWorkerHeartbeat, getWorkerAlert } from './db.js';
 import { DEFAULT_GOOGLE_CLIENT_ID } from './googleClient.js';
 
 const CONFIG_KEY = 'config';
@@ -48,15 +48,22 @@ export const FIELDS = {
   playlistTopic: { env: 'PLAYLIST_TOPIC', default: '', label: 'Playlist subject / category (songs are written about this)', group: 'Playlist & content' },
   songLanguage: { env: 'SONG_LANGUAGE', default: 'Gujarati', label: 'Song language', group: 'Playlist & content' },
 
+  // Autopilot (hands-free operation)
+  timezone: { env: 'TIMEZONE', default: 'Asia/Kolkata', label: 'Your timezone (the daily time is read in this zone)', group: 'Autopilot' },
+  songsPerDay: { env: 'SONGS_PER_DAY', default: '1', label: 'Songs per day', group: 'Autopilot' },
+  autoRetries: { env: 'AUTO_RETRIES', default: '2', label: 'Automatic retries after a failure', group: 'Autopilot' },
+
   // Video source
-  videoMode: { env: 'VIDEO_MODE', default: 'auto', label: 'Mode: auto (clips if available) / clips / thumbnail', group: 'Video source' },
-  clipsPerSong: { env: 'CLIPS_PER_SONG', default: '3', label: 'Clips to use per song', group: 'Video source' },
+  videoMode: { env: 'VIDEO_MODE', default: 'auto', label: 'Mode: auto (clips → AI scenes → cover) / scenes / clips / thumbnail', group: 'Video source' },
+  clipsPerSong: { env: 'CLIPS_PER_SONG', default: '3', label: 'Clips to use per song (clips mode)', group: 'Video source' },
+  sceneCount: { env: 'SCENE_COUNT', default: '4', label: 'AI scenes per song (scenes mode)', group: 'Video source' },
+  sceneSeconds: { env: 'SCENE_SECONDS', default: '8', label: 'Seconds per scene before it cross-fades', group: 'Video source' },
 
   // Storage (Google Drive) + local sync
   driveRefreshToken: { env: 'DRIVE_REFRESH_TOKEN', secret: true, label: 'Drive Refresh Token (use Connect Drive above)', group: 'Storage (Google Drive)' },
   driveFolderName: { env: 'DRIVE_FOLDER_NAME', default: 'AI Song Engine', label: 'Drive folder name', group: 'Storage (Google Drive)' },
   driveKeepSongs: { env: 'DRIVE_KEEP_SONGS', default: '4', label: 'Keep last N songs in Drive (older auto-deleted)', group: 'Storage (Google Drive)' },
-  localSavePath: { env: 'LOCAL_SAVE_PATH', default: '', label: 'Local folder path (for the sync script)', group: 'Storage (Google Drive)' },
+  localSavePath: { env: 'LOCAL_SAVE_PATH', default: '', label: 'Local folder on the worker PC (blank = a "Songs" folder next to the app)', group: 'Storage (Google Drive)' },
 };
 
 async function readStored() {
@@ -176,9 +183,12 @@ export async function getReadiness() {
   // The worker pulls jobs from Redis, so "ready" means a worker is alive -
   // not that a public Worker URL is configured (a home PC has none).
   const hb = await getWorkerHeartbeat();
+  const alert = await getWorkerAlert();
   return {
     workerOnline: hb.online,
     workerInfo: hb.info,
+    autopilot: hb.info?.autopilot || null,
+    alert,
     lyrics: Boolean(c.openaiApiKey),
     // self-host (suno-api) needs only the wrapper URL; generic mode needs a key too
     song: Boolean(c.sunoBaseUrl) && (c.sunoMode === 'suno-api' ? true : Boolean(c.sunoApiKey)),

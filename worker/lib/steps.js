@@ -267,16 +267,13 @@ async function generateSong(cfg, { title, lyrics, style_tags }, onProgress = () 
 }
 
 // ------------------------------------------------------------- thumbnail ---
-async function generateThumbnail(cfg, { title, mood, styleTags }) {
-  if (!cfg.geminiApiKey) throw new Error('Gemini API key is not set (Settings → Thumbnail)');
-  const prompt = [
-    `Design a striking, high-contrast YouTube thumbnail / album cover for a song titled "${title}".`,
-    mood ? `Mood: ${mood}.` : '',
-    styleTags ? `Musical style: ${styleTags}.` : '',
-    'Cinematic lighting, bold focal subject, vibrant but tasteful colors.',
-    '16:9 aspect ratio. No text, no watermark, no logos.',
-  ].filter(Boolean).join(' ');
-
+/**
+ * One Gemini image call. Shared by the cover art and by the AI scene images
+ * used for the hands-free music video.
+ * @returns {Promise<Buffer>} PNG/JPEG bytes
+ */
+async function geminiImage(cfg, prompt) {
+  if (!cfg.geminiApiKey) throw new Error('Gemini API key is not set (Settings \u2192 Thumbnail)');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiImageModel}:generateContent?key=${cfg.geminiApiKey}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -288,7 +285,7 @@ async function generateThumbnail(cfg, { title, mood, styleTags }) {
   });
   if (!res.ok) {
     const b = await res.text().catch(() => '');
-    throw new Error(`Gemini thumbnail failed (${res.status}): ${b.slice(0, 300)}`);
+    throw new Error(`Gemini image failed (${res.status}): ${b.slice(0, 300)}`);
   }
   const data = await res.json();
   const parts = data?.candidates?.[0]?.content?.parts || [];
@@ -300,4 +297,15 @@ async function generateThumbnail(cfg, { title, mood, styleTags }) {
   return Buffer.from(inline.data, 'base64');
 }
 
-module.exports = { generateLyrics, generateSong, generateThumbnail };
+async function generateThumbnail(cfg, { title, mood, styleTags }) {
+  const prompt = [
+    `Design a striking, high-contrast YouTube thumbnail / album cover for a song titled "${title}".`,
+    mood ? `Mood: ${mood}.` : '',
+    styleTags ? `Musical style: ${styleTags}.` : '',
+    'Cinematic lighting, bold focal subject, vibrant but tasteful colors.',
+    '16:9 aspect ratio. No text, no watermark, no logos.',
+  ].filter(Boolean).join(' ');
+  return geminiImage(cfg, prompt);
+}
+
+module.exports = { generateLyrics, generateSong, generateThumbnail, geminiImage };

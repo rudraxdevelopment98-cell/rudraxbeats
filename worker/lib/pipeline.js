@@ -9,10 +9,12 @@ const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
 
-const { updateJob, getConfig } = require('./store');
+const { updateJob, getConfig, setAlert } = require('./store');
 const { generateLyrics, generateSong, generateThumbnail } = require('./steps');
-const { renderVideo, renderVideoFromClips, makeFallbackImage, sanitize } = require('./video');
+const { renderVideo, renderVideoFromClips, renderVideoFromScenes, makeFallbackImage, sanitize } = require('./video');
+const { generateSceneImages } = require('./scenes');
 const { storeSong, enforceRetention } = require('./drive');
+const { saveLocally } = require('./localsave');
 const clips = require('./clips');
 const { uploadToYoutube, addToPlaylist } = require('./youtube');
 
@@ -50,6 +52,13 @@ async function runJob(jobId) {
   const fail = async (step, err) => {
     const message = err && err.message ? err.message : String(err);
     console.error(`[job ${jobId}] ${step} failed:`, message);
+    // The one failure a retry can never fix: the Suno cookie has expired.
+    if (step === 'song' && /cookie|captcha|401|403/i.test(message)) {
+      await setAlert(
+        'Suno rejected the request — the SUNO_COOKIE in your suno-api deployment has ' +
+        'probably expired. Paste a fresh cookie there and the next run will work.'
+      ).catch(() => {});
+    }
     await updateJob(jobId, {
       status: 'error',
       step,
@@ -118,9 +127,12 @@ async function runJob(jobId) {
     await progress('thumbnail', 100, 'Cover art ready');
 
     // 4) VIDEO -------------------------------------------------------------
-    // Prefer real clips the user dropped in the clips/ folder (made in Flow AI
-    // or anywhere else). When there are none — or the mode says otherwise —
-    // fall back to the generated cover image so the channel never stalls.
+    // Hands-free by design. Three sources, tried in this order:
+    //   clips   - real clips dropped in the clips/ folder (Flow AI etc.)
+    //   scenes  - AI-painted shots, Ken-Burns + cross-fade (needs no human)
+    //   cover   - the single cover image with a waveform (always works)
+    // `videoMode` picks the starting point; every mode falls through to the
+    // cover image rather than failing the run.
     await setStep('video', 'running');
     const mode = cfg.videoMode || 'auto';
     let picked = [];
@@ -130,6 +142,7 @@ async function runJob(jobId) {
     }
 
     let usedClips = 0;
+    let usedScenes = 0;
     try {
       if (picked.length) {
         await progress('video', 10, `Building video from ${picked.length} clip(s)…`);
@@ -142,26 +155,62 @@ async function runJob(jobId) {
         usedClips = r.clipsUsed;
         await clips.markUsed(picked); // never reuse the same clip
       } else {
-        if (mode === 'clips') {
-          // Explicitly asked for clips but the folder is empty - say so, then
-          // still publish with the cover image rather than failing the run.
-          console.warn(`[job ${jobId}] no clips available, using the cover image instead`);
+        // No clips (or the mode never wanted them): paint the scenes ourselves.
+        const wantScenes = (mode === 'auto' || mode === 'scenes' || mode === 'clips') && Boolean(cfg.geminiApiKey);
+        let scenePaths = [];
+        if (wantScenes) {
+          await progress('video', 10, 'Directing the music video…');
+          try {
+            const r = await generateSceneImages(
+              cfg,
+              {
+                title: song.title, titleRoman: song.titleRoman, mood: song.mood,
+                styleTags: song.style_tags, topic: cfg.playlistTopic, language: song.language,
+              },
+              { count: cfg.sceneCount || 4, workDir: work, onProgress: (m) => progress('video', 30, m) }
+            );
+            scenePaths = r.paths;
+          } catch (e) {
+            console.warn(`[job ${jobId}] scene images failed: ${e.message}`);
+          }
         }
-        await progress('video', 10, 'Rendering video from the cover image…');
-        await renderVideo({
-          audioFile, imageFile, titleFile, outFile,
-          title: song.title, titleRoman: song.titleRoman,
-        });
+
+        if (scenePaths.length >= 2) {
+          await progress('video', 60, `Animating ${scenePaths.length} scenes…`);
+          const r = await renderVideoFromScenes({
+            imagePaths: scenePaths,
+            audioFile, titleFile, outFile,
+            title: song.title, titleRoman: song.titleRoman,
+            workDir: work, sceneSeconds: cfg.sceneSeconds || 8,
+          });
+          usedScenes = r.scenesUsed;
+        } else {
+          if (mode === 'clips') {
+            console.warn(`[job ${jobId}] no clips available, using the cover image instead`);
+          }
+          await progress('video', 60, 'Rendering video from the cover image…');
+          await renderVideo({
+            audioFile, imageFile, titleFile, outFile,
+            title: song.title, titleRoman: song.titleRoman,
+          });
+        }
       }
     } catch (e) { return fail('video', e); }
 
+    const videoSource = usedClips ? 'clips' : usedScenes ? 'scenes' : 'thumbnail';
     await updateJob(jobId, {
       steps: { video: 'done' },
-      videoSource: usedClips ? 'clips' : 'thumbnail',
+      videoSource,
       clipsUsed: usedClips,
+      scenesUsed: usedScenes,
       clipsRemaining: clips.countClips(),
     });
-    await progress('video', 100, usedClips ? `Video built from ${usedClips} clip(s)` : 'Video rendered');
+    await progress(
+      'video', 100,
+      usedClips ? `Video built from ${usedClips} clip(s)`
+        : usedScenes ? `Video built from ${usedScenes} AI scenes`
+          : 'Video rendered'
+    );
 
     // 5) DRIVE + YOUTUBE ---------------------------------------------------
     await setStep('upload', 'running');
@@ -196,8 +245,27 @@ async function runJob(jobId) {
     await progress('upload', 90, 'Adding to playlist…');
     const pl = await addToPlaylist(cfg, yt.youtubeId);
 
+    // Copy the finished song into the folder chosen in Settings. The worker
+    // runs on that PC, so no sync script or manual download is involved.
+    let local = { saved: false, dir: null, files: [] };
+    try {
+      local = await saveLocally(cfg, {
+        title: song.title, videoPath: outFile, audioPath: audioFile, imagePath: imageFile,
+        lyrics: song.lyrics, youtubeUrl: yt.youtubeUrl,
+      });
+      if (local.saved) console.log(`[job ${jobId}] saved locally -> ${local.dir}`);
+    } catch (e) {
+      console.warn(`[job ${jobId}] local save failed: ${e.message}`);
+      local = { saved: false, dir: null, files: [], reason: e.message };
+    }
+
+    // A full run means nothing is waiting on a human any more.
+    await setAlert(null).catch(() => {});
+
     await updateJob(jobId, {
       status: 'done', step: 'upload', steps: { upload: 'done' },
+      localDir: local.saved ? local.dir : null,
+      localSaved: local.saved ? local.files.length : 0,
       youtubeId: yt.youtubeId, youtubeUrl: yt.youtubeUrl,
       playlistAdded: pl.added, playlistError: pl.added ? null : pl.reason || null,
       progress: 100,

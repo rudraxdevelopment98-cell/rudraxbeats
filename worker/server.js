@@ -17,6 +17,7 @@ const { popQueue, getJob, updateJob, client, beat } = require('./lib/store');
 const { runJob } = require('./lib/pipeline');
 const { ffmpegPath, HAS_DRAWTEXT } = require('./lib/video');
 const clips = require('./lib/clips');
+const autopilot = require('./lib/autopilot');
 
 const PORT = process.env.PORT || 3001;
 
@@ -48,6 +49,11 @@ app.listen(PORT, () => {
   console.log(`  redis          : ${process.env.REDIS_URL ? 'configured ✓' : 'MISSING ✗  set REDIS_URL in .env'}`);
   clips.ensureDirs();
   console.log(`  video clips    : ${clips.countClips()} waiting  (${clips.clipsDir()})`);
+  autopilot.status().then((a) => {
+    if (!a) return;
+    console.log(`  autopilot      : ${a.enabled ? `daily at ${a.at} ${a.timezone} (${a.songsPerDay}/day)` : 'paused in the dashboard'}`);
+    console.log(`  visuals        : ${a.videoMode}   retries: ${a.autoRetries}`);
+  }).catch(() => {});
   console.log('  ─────────────────────────────────────────────');
   console.log('  waiting for jobs… (press Ctrl+C to stop)');
   console.log('');
@@ -78,8 +84,13 @@ async function loop() {
     console.log(`--- picking up job ${jobId} ---`);
     try {
       const result = await runJob(jobId);
-      if (result) state.processed++;
-      else state.failed++;
+      if (result) {
+        state.processed++;
+      } else {
+        state.failed++;
+        // Nothing here needs a human: schedule the retry ourselves.
+        await autopilot.handleFailure(jobId).catch(() => {});
+      }
     } catch (e) {
       state.failed++;
       state.lastError = e.message;
@@ -89,24 +100,36 @@ async function loop() {
         error: `worker: ${e.message}`,
         note: 'Worker error',
       }).catch(() => {});
+      await autopilot.handleFailure(jobId).catch(() => {});
     } finally {
       state.current = null;
     }
   }
 }
 
-// Heartbeat so the dashboard can show "worker online" even for a home PC.
-const sendBeat = () =>
-  beat({
-    processed: state.processed,
-    failed: state.failed,
-    current: state.current,
-    // so the dashboard can show how many hand-made clips are still queued
-    clipsAvailable: clips.countClips(),
-    clipsDir: clips.clipsDir(),
-  }).catch(() => {});
+// Heartbeat so the dashboard can show "worker online" even for a home PC,
+// plus what the autopilot is going to do next.
+const sendBeat = async () => {
+  try {
+    await beat({
+      processed: state.processed,
+      failed: state.failed,
+      current: state.current,
+      // so the dashboard can show how many hand-made clips are still queued
+      clipsAvailable: clips.countClips(),
+      clipsDir: clips.clipsDir(),
+      autopilot: await autopilot.status(),
+    });
+  } catch (_) {}
+};
 sendBeat();
 setInterval(sendBeat, 20000);
+
+// A reboot in the middle of a song must not need a click to resume.
+autopilot.recoverStuckJobs().catch((e) => console.warn(`recovery failed: ${e.message}`));
+// Daily schedule + automatic retries live here, not on Vercel: this process is
+// the one that is always on.
+autopilot.start();
 
 loop().catch((e) => {
   console.error('queue loop died:', e);
