@@ -46,7 +46,7 @@ export const FIELDS = {
   // Playlist & content direction
   ytPlaylistId: { env: 'YT_PLAYLIST_ID', label: 'Playlist ID or URL (uploads get added here)', group: 'Playlist & content' },
   playlistTopic: { env: 'PLAYLIST_TOPIC', default: '', label: 'Playlist subject / category (songs are written about this)', group: 'Playlist & content' },
-  songLanguage: { env: 'SONG_LANGUAGE', default: 'English', label: 'Song language', group: 'Playlist & content' },
+  songLanguage: { env: 'SONG_LANGUAGE', default: 'Gujarati', label: 'Song language', group: 'Playlist & content' },
 
   // Storage (Google Drive) + local sync
   driveFolderName: { env: 'DRIVE_FOLDER_NAME', default: 'AI Song Engine', label: 'Drive folder name', group: 'Storage (Google Drive)' },

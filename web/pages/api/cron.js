@@ -3,6 +3,7 @@
 // always-on worker; the schedule stored in KV acts as an enable/disable gate.
 
 import { getSchedule, createJob, enqueueJob } from '../../lib/db.js';
+import { wakeWorker } from '../../lib/wakeWorker.js';
 
 function isAuthorized(req) {
   const secret = process.env.CRON_SECRET;
@@ -20,6 +21,8 @@ export default async function handler(req, res) {
     }
     const job = await createJob({ trigger: 'cron' });
     await enqueueJob(job.id);
+    // Free hosting tiers sleep when idle; a Redis write won't wake them.
+    await wakeWorker();
     return res.status(202).json({ ok: true, jobId: job.id });
   } catch (err) {
     console.error('cron handler error:', err);

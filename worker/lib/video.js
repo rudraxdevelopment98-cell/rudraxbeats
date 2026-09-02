@@ -24,7 +24,43 @@ try {
   );
 } catch (_) {}
 
-const FONT_PATH = process.env.FONT_PATH || '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+// Font selection. DejaVu has no Gujarati/Devanagari glyphs, so for Indic
+// titles we look for a Noto font first (the Docker image installs fonts-noto-core)
+// and fall back to the romanized title if no suitable font exists.
+const fsSync = require('fs');
+const INDIC = /[\u0A80-\u0AFF\u0900-\u097F\u0980-\u09FF\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F]/;
+
+const LATIN_FONTS = [
+  process.env.FONT_PATH,
+  '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+  '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+];
+const INDIC_FONTS = [
+  process.env.FONT_PATH_INDIC,
+  '/usr/share/fonts/truetype/noto/NotoSansGujarati-Regular.ttf',
+  '/usr/share/fonts/truetype/noto/NotoSansGujarati-Bold.ttf',
+  '/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf',
+  '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
+];
+
+const firstExisting = (list) => list.filter(Boolean).find((f) => { try { return fsSync.existsSync(f); } catch (_) { return false; } }) || null;
+
+const FONT_PATH = firstExisting(LATIN_FONTS) || '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+const FONT_PATH_INDIC = firstExisting(INDIC_FONTS);
+
+/**
+ * Choose the overlay text + font: prefer the native-script title when a font
+ * that can actually draw it is installed, else use the romanized title.
+ */
+function chooseTitle(title, titleRoman) {
+  const native = String(title || '');
+  if (INDIC.test(native)) {
+    if (FONT_PATH_INDIC) return { text: native, font: FONT_PATH_INDIC };
+    if (titleRoman) return { text: String(titleRoman), font: FONT_PATH };
+    return { text: '', font: FONT_PATH }; // nothing safe to draw - skip overlay
+  }
+  return { text: native, font: FONT_PATH };
+}
 
 function run(args) {
   return new Promise((resolve, reject) => {
@@ -53,8 +89,11 @@ const sanitize = (t) =>
   String(t || 'New Song').replace(/[\r\n]+/g, ' ').replace(/[%\\]/g, '').trim().slice(0, 80);
 
 /** Render audio + still image into an mp4. Returns { durationSec }. */
-async function renderVideo({ audioFile, imageFile, titleFile, outFile, title }) {
+async function renderVideo({ audioFile, imageFile, titleFile, outFile, title, titleRoman }) {
   const dur = (await probeDuration(audioFile)) || 150;
+  const chosen = chooseTitle(title, titleRoman);
+  const drawOverlay = HAS_DRAWTEXT && titleFile && chosen.text;
+  if (drawOverlay) fsSync.writeFileSync(titleFile, sanitize(chosen.text));
   const zoomFrames = Math.ceil(dur * 30);
 
   const chain = [
@@ -63,9 +102,9 @@ async function renderVideo({ audioFile, imageFile, titleFile, outFile, title }) 
     `[1:a]showwaves=s=1920x240:mode=cline:rate=30:colors=white@0.65[wave]`,
     `[bg][wave]overlay=x=0:y=H-h-60[bgw]`,
   ];
-  if (HAS_DRAWTEXT && titleFile) {
+  if (drawOverlay) {
     chain.push(
-      `[bgw]drawtext=fontfile='${FONT_PATH}':textfile='${titleFile}':fontcolor=white:` +
+      `[bgw]drawtext=fontfile='${chosen.font}':textfile='${titleFile}':fontcolor=white:` +
         `fontsize=64:box=1:boxcolor=black@0.45:boxborderw=24:x=(w-text_w)/2:y=90[v]`
     );
   } else {
@@ -96,4 +135,4 @@ async function makeFallbackImage(outFile) {
   ]);
 }
 
-module.exports = { renderVideo, makeFallbackImage, sanitize, ffmpegPath, HAS_DRAWTEXT };
+module.exports = { renderVideo, makeFallbackImage, sanitize, ffmpegPath, HAS_DRAWTEXT, FONT_PATH, FONT_PATH_INDIC };

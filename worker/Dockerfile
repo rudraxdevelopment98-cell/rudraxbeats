@@ -5,9 +5,11 @@
 # prefers this system ffmpeg. The npm static binaries remain as a fallback.
 FROM node:20-slim
 
-# ffmpeg (full build, includes drawtext) + DejaVu font for the title overlay.
+# ffmpeg (full build, includes drawtext) + fonts for the title overlay.
+# fonts-noto-core provides Noto Sans Gujarati/Devanagari so Indic titles render
+# instead of showing empty boxes.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core ca-certificates \
+    && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core fonts-noto-core ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

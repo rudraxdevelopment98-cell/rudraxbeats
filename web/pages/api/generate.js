@@ -5,6 +5,7 @@
 
 import { createJob, enqueueJob } from '../../lib/db.js';
 import { requireAuth } from '../../lib/auth.js';
+import { wakeWorker } from '../../lib/wakeWorker.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -16,6 +17,8 @@ export default async function handler(req, res) {
   try {
     const job = await createJob({ trigger: 'manual' });
     await enqueueJob(job.id);
+    // Free hosting tiers sleep when idle; a Redis write won't wake them.
+    await wakeWorker();
     return res.status(202).json({ ok: true, jobId: job.id, job });
   } catch (err) {
     console.error('generate handler error:', err);

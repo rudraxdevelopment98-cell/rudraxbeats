@@ -72,6 +72,7 @@ async function runJob(jobId) {
     await updateJob(jobId, {
       steps: { lyrics: 'done' },
       title: song.title, lyrics: song.lyrics, styleTags: song.style_tags, mood: song.mood,
+      titleRoman: song.titleRoman || null, language: song.language || null,
     });
     await progress('lyrics', 100, `Lyrics ready: “${song.title}”`);
 
@@ -80,7 +81,17 @@ async function runJob(jobId) {
     await progress('song', 5, 'Sending to Suno…');
     let audio;
     try {
-      audio = await generateSong(cfg, song, (msg) => progress('song', 50, msg));
+      // A music model pronounces Indic languages far better from a Latin
+      // transliteration, so prefer lyricsRoman when the model produced one.
+      const sungLyrics = song.lyricsRoman && song.lyricsRoman.length > 40
+        ? song.lyricsRoman
+        : song.lyrics;
+      const sungTitle = song.titleRoman || song.title;
+      audio = await generateSong(
+        cfg,
+        { title: sungTitle, lyrics: sungLyrics, style_tags: song.style_tags },
+        (msg) => progress('song', 50, msg)
+      );
     } catch (e) { return fail('song', e); }
     await progress('song', 90, 'Downloading audio…');
     try {
@@ -109,8 +120,10 @@ async function runJob(jobId) {
     await setStep('video', 'running');
     await progress('video', 10, 'Rendering video with ffmpeg…');
     try {
-      await fsp.writeFile(titleFile, sanitize(song.title));
-      await renderVideo({ audioFile, imageFile, titleFile, outFile, title: song.title });
+      await renderVideo({
+        audioFile, imageFile, titleFile, outFile,
+        title: song.title, titleRoman: song.titleRoman,
+      });
     } catch (e) { return fail('video', e); }
     await updateJob(jobId, { steps: { video: 'done' } });
     await progress('video', 100, 'Video rendered');
@@ -139,7 +152,8 @@ async function runJob(jobId) {
     try {
       yt = await uploadToYoutube(cfg, {
         videoPath: outFile, imagePath: imageFile,
-        title: song.title, lyrics: song.lyrics, mood: song.mood, styleTags: song.style_tags,
+        title: song.title, titleRoman: song.titleRoman, language: song.language,
+        lyrics: song.lyrics, mood: song.mood, styleTags: song.style_tags,
       });
     } catch (e) { return fail('upload', e); }
 

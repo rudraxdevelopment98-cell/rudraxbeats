@@ -85,14 +85,28 @@ Import the repo, root directory `web/`. Deploy. Then open it and
 Add other people under **Settings → Access** (they sign in with their own
 Google account; no password sharing).
 
-### 4. Deploy the worker (Railway or Render) — this is what does the work
-1. New Project → Deploy from GitHub → this repo → **root directory `worker/`**.
-2. It builds the `Dockerfile` (Node + full ffmpeg with `drawtext` + fonts).
-3. Set **one** env var: **`REDIS_URL`** — the exact same value as in Vercel.
-4. Deploy. `GET /health` should return `{"ok":true,...}`.
+### 4. Deploy the worker — this is what does the work
 
-The worker reads every API key from the same settings the dashboard writes, so
-there is nothing else to configure there.
+Whatever you pick, the setup is the same: **root directory `worker/`** and
+**one env var `REDIS_URL`** (the exact value from Vercel). It builds the
+`Dockerfile` (Node + full ffmpeg + Noto fonts). Check `GET /health` returns
+`{"ok":true,...}`. Every API key comes from the dashboard, so nothing else.
+
+**Free options (pick one):**
+
+| Option | Cost | Notes |
+| --- | --- | --- |
+| **Your own PC** | Free | `cd worker && npm install && REDIS_URL=... npm start`. Best quality (no cold starts) but only runs while the PC is on. Songs also land on your disk directly. |
+| **Render free web service** | Free | 750 h/month. **Sleeps after ~15 min idle** — the dashboard pings `/health` when it enqueues, which wakes it. Add a free uptime pinger (UptimeRobot / cron-job.org) hitting `/health` every 10 min to keep it awake during long jobs. |
+| **Oracle Cloud Free Tier VM** | Free forever | A real always-on ARM VM. More setup (create VM, install Docker, run the image) but no sleeping and no limits. |
+| **Fly.io / Koyeb** | Small free allowance | Fine for one song a day. |
+| Railway | ~$5 trial then paid | Easiest UX, not free long-term. |
+
+**About sleeping tiers:** enqueuing a job is a Redis write, which does *not*
+wake a sleeping service. That's why `/api/generate` and `/api/cron` also send a
+cheap HTTP ping to the worker's `/health`. A cold start takes ~30–60 s, then the
+job is picked up normally. For the daily cron, the uptime pinger is the reliable
+fix.
 
 ### 5. Self-host the Suno wrapper (uses your Suno Pro)
 1. Deploy [gcui-art/suno-api](https://github.com/gcui-art/suno-api) with its
@@ -132,6 +146,27 @@ Set **Playlist ID/URL** and **Playlist subject** in Settings. Then:
 
 Want a second category? Change the subject and playlist, and the next songs
 follow the new theme.
+
+## Gujarati (and other Indic languages)
+
+Set **Settings → Playlist & content → Song language** to `Gujarati` (the default).
+The engine then:
+
+- picks from a **Gujarati/Indian genre palette** (garba, dandiya raas, lokgeet,
+  bhajan, sufi, folk-pop…) instead of western tags;
+- writes the lyrics in **native ગુજરાતી script**, *and* asks for a **romanized
+  transliteration**;
+- sends the **romanized** lyrics to Suno — music models pronounce Indic
+  languages far better from Latin script — while the **native script** is used
+  for the YouTube title, description and on-screen title;
+- forces the language into the Suno style tags so the vocal is actually Gujarati;
+- titles videos as `ગુજરાતી શીર્ષક | Romanized Title` and adds Gujarati tags and
+  hashtags for discovery;
+- renders the on-screen title with **Noto Sans Gujarati**, falling back to the
+  romanized title if that font is missing.
+
+The same handling applies to Hindi, Marathi, Punjabi, Bengali, Tamil, Telugu,
+Kannada, Malayalam, Odia, Urdu, Nepali and Assamese.
 
 ## Storage & retention
 
@@ -181,7 +216,8 @@ It polls Drive and saves anything new into that folder.
 
 | Symptom | Cause / fix |
 | --- | --- |
-| Job stuck at "Waiting for the worker" | The worker isn't running. Check its `/health` and that `REDIS_URL` matches Vercel's. |
+| Job stuck at "Waiting for the worker" | The worker isn't running, or a free tier is asleep. Open its `/health` once to wake it, and confirm `REDIS_URL` matches Vercel's. |
+| Gujarati title shows boxes in the video | The image needs `fonts-noto-core` (the Dockerfile installs it). Without it the engine falls back to the romanized title automatically. |
 | "Attach a Vercel KV store" on login | No Redis connected yet, or the app wasn't redeployed after connecting it. |
 | Google login button errors | The app origin isn't in **Authorized JavaScript origins**. |
 | Song step fails | Suno cookie expired or captcha — re-paste `SUNO_COOKIE`; check `/api/get_limit`. |

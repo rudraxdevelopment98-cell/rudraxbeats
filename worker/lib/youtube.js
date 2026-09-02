@@ -12,37 +12,53 @@ function ytClient(cfg) {
   return google.youtube({ version: 'v3', auth: oauth2 });
 }
 
-function buildDescription({ title, lyrics, mood, styleTags }) {
+const isGujarati = (l) => String(l || '').trim().toLowerCase() === 'gujarati';
+
+function buildDescription({ title, titleRoman, lyrics, mood, styleTags, language }) {
+  const gu = isGujarati(language);
+  const head = titleRoman && titleRoman !== title ? `${title} | ${titleRoman}` : title;
+  const hashtags = gu
+    ? '#ગુજરાતી #gujarati #gujaratisong #garba #newgujaratisong #music'
+    : '#music #originalsong #newmusic';
   return [
-    title, '',
-    'An original AI-assisted song. Thanks for listening — like & subscribe for a new track every day.',
+    head, '',
+    gu
+      ? 'નવું ગુજરાતી ગીત. સાંભળવા બદલ આભાર — રોજ નવા ગીત માટે ચેનલ સબસ્ક્રાઇબ કરો. 🙏'
+      : 'An original AI-assisted song. Thanks for listening — like & subscribe for a new track every day.',
     '',
+    language ? `Language: ${language}` : '',
     mood ? `Mood: ${mood}` : '',
     styleTags ? `Style: ${styleTags}` : '',
     '',
-    lyrics ? `Lyrics:\n${lyrics}` : '',
+    lyrics ? (gu ? `ગીતના શબ્દો / Lyrics:\n${lyrics}` : `Lyrics:\n${lyrics}`) : '',
     '',
-    '#music #originalsong #newmusic',
-  ].join('\n').slice(0, 4900);
+    hashtags,
+  ].filter((x) => x !== undefined && x !== null).join('\n').slice(0, 4900);
 }
 
-function buildTags({ styleTags, mood }) {
-  const base = ['original song', 'new music', 'ai music', 'daily music'];
+function buildTags({ styleTags, mood, language }) {
+  const gu = isGujarati(language);
+  const base = gu
+    ? ['gujarati song', 'gujarati music', 'new gujarati song', 'ગુજરાતી ગીત',
+       'gujarati folk', 'garba', 'original song']
+    : ['original song', 'new music', 'ai music', 'daily music'];
   const fromStyle = (styleTags || '').split(',').map((t) => t.trim()).filter(Boolean).slice(0, 6);
   return [...new Set([...base, ...fromStyle, ...(mood ? [mood] : [])])].slice(0, 15);
 }
 
 /** @returns {Promise<{youtubeId, youtubeUrl}>} */
-async function uploadToYoutube(cfg, { videoPath, imagePath, title, lyrics, mood, styleTags }) {
+async function uploadToYoutube(cfg, { videoPath, imagePath, title, titleRoman, lyrics, mood, styleTags, language }) {
   const youtube = ytClient(cfg);
+  // Native script first (readers search it), romanized after (helps discovery).
+  const fullTitle = titleRoman && titleRoman !== title ? `${title} | ${titleRoman}` : String(title);
 
   const insert = await youtube.videos.insert({
     part: ['snippet', 'status'],
     requestBody: {
       snippet: {
-        title: String(title).slice(0, 95),
-        description: buildDescription({ title, lyrics, mood, styleTags }),
-        tags: buildTags({ styleTags, mood }),
+        title: fullTitle.slice(0, 95),
+        description: buildDescription({ title, titleRoman, lyrics, mood, styleTags, language }),
+        tags: buildTags({ styleTags, mood, language }),
         categoryId: '10', // Music
       },
       status: {
