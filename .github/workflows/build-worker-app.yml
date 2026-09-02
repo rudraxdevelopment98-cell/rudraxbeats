@@ -1,0 +1,125 @@
+name: Build worker desktop app
+
+# Produces a self-contained Windows download for the AI Song Engine worker:
+# the app, its dependencies, a bundled Node runtime and ffmpeg — so a user just
+# unzips and double-clicks, with no Node install and no config files to edit.
+#
+# Run it from the Actions tab ("Run workflow"), or push a tag like worker-v1.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. worker-v1)'
+        required: false
+        default: 'worker-latest'
+  push:
+    tags:
+      - 'worker-v*'
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '20.18.1'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Installing on Windows makes ffmpeg-static fetch the WINDOWS ffmpeg,
+      # which is the binary we ship next to the app.
+      - name: Install worker dependencies
+        working-directory: worker
+        run: npm install --omit=dev --no-audit --no-fund
+
+      - name: Assemble the app folder
+        shell: pwsh
+        working-directory: worker
+        run: |
+          $dist = "dist/AISongEngineWorker"
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+
+          # app code
+          Copy-Item launcher.js, server.js, package.json $dist
+          Copy-Item -Recurse lib "$dist/lib"
+
+          # dependencies, minus the big binary packages (the binary rides along
+          # separately, so shipping them too would double ~150 MB)
+          New-Item -ItemType Directory -Force -Path "$dist/node_modules" | Out-Null
+          Get-ChildItem node_modules -Force |
+            Where-Object { $_.Name -notin @('ffmpeg-static','ffprobe-static') } |
+            ForEach-Object { Copy-Item -Recurse -Force $_.FullName "$dist/node_modules/" }
+
+          # ffmpeg next to the app (a packaged app can't run it from node_modules)
+          Copy-Item node_modules/ffmpeg-static/ffmpeg.exe "$dist/ffmpeg.exe"
+
+          # the Node runtime, so the user never installs Node
+          $nodeZip = "$env:RUNNER_TEMP/node.zip"
+          Invoke-WebRequest -Uri "https://nodejs.org/dist/v${{ env.NODE_VERSION }}/node-v${{ env.NODE_VERSION }}-win-x64.zip" -OutFile $nodeZip
+          Expand-Archive -Path $nodeZip -DestinationPath "$env:RUNNER_TEMP/nodedist" -Force
+          Copy-Item "$env:RUNNER_TEMP/nodedist/node-v${{ env.NODE_VERSION }}-win-x64/node.exe" "$dist/node.exe"
+
+          # launchers
+          Copy-Item "windows/AI Song Engine.bat" $dist
+          Copy-Item "windows/Install.bat" $dist
+
+          @"
+          AI Song Engine - Worker (Windows)
+          =================================
+
+          QUICK START
+            1. Unzip this folder anywhere.
+            2. Double-click  Install.bat   (adds a Desktop shortcut, then starts it)
+               - or just run "AI Song Engine.bat" without installing.
+            3. The FIRST time only, paste your REDIS_URL when it asks.
+               Dashboard -> Settings -> "Worker app" card has a Copy button for it.
+
+          Leave the window open - that window IS the engine. Your dashboard will
+          show "Worker online". Close the window to stop it.
+
+          Everything is included: Node runtime, ffmpeg, all dependencies.
+          Nothing else to install.
+          "@ | Out-File -Encoding utf8 "$dist/README.txt"
+
+          Get-ChildItem $dist
+          "{0:N0} MB total" -f ((Get-ChildItem $dist -Recurse | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: Smoke-test the assembled app
+        shell: pwsh
+        working-directory: worker/dist/AISongEngineWorker
+        run: |
+          # No REDIS_URL and no TTY: the wizard should start and exit cleanly
+          # rather than crash. A non-zero exit is fine; a stack trace is not.
+          $out = (& ./node.exe launcher.js 2>&1 | Out-String)
+          Write-Host $out
+          if ($out -notmatch 'AI SONG ENGINE') { throw 'launcher did not start' }
+          if ($out -match 'Cannot find module') { throw 'a dependency is missing from the bundle' }
+
+      - name: Zip it
+        shell: pwsh
+        working-directory: worker
+        run: Compress-Archive -Path dist/AISongEngineWorker/* -DestinationPath AISongEngineWorker-windows.zip -Force
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: AI Song Engine Worker (Windows)
+          body: |
+            **Download `AISongEngineWorker-windows.zip`**, unzip it, and run
+            `Install.bat` (or `AI Song Engine.bat`).
+
+            Paste your `REDIS_URL` once when it asks — the dashboard's
+            **Settings → Worker app** card has a Copy button for it.
+
+            Includes the Node runtime and ffmpeg. Nothing else to install.
+          files: worker/AISongEngineWorker-windows.zip
+          fail_on_unmatched_files: true

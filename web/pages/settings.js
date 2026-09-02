@@ -43,6 +43,9 @@ export default function Settings() {
   const [newEmail, setNewEmail] = useState('');
   const [tests, setTests] = useState({}); // target -> { loading, ok, message }
   const [preview, setPreview] = useState(null); // { loading } | lyrics result
+  const [setupInfo, setSetupInfo] = useState(null); // desktop-app setup details
+  const [showRedis, setShowRedis] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const previewLyrics = async () => {
     setPreview({ loading: true });
@@ -79,6 +82,13 @@ export default function Settings() {
     try { const r = await fetch('/api/youtube/status'); if (r.ok) setYt(await r.json()); } catch (_) {}
   }, []);
 
+  const loadSetup = useCallback(async () => {
+    try {
+      const r = await fetch('/api/worker-setup');
+      if (r.ok) setSetupInfo(await r.json());
+    } catch (_) {}
+  }, []);
+
   const loadMe = useCallback(async () => {
     try {
       const d = await (await fetch('/api/auth/me')).json();
@@ -87,7 +97,7 @@ export default function Settings() {
     } catch (_) {}
   }, []);
 
-  useEffect(() => { load(); loadYt(); loadMe(); }, [load, loadYt, loadMe]);
+  useEffect(() => { load(); loadYt(); loadMe(); loadSetup(); }, [load, loadYt, loadMe, loadSetup]);
 
   const changeAccess = async (action, email) => {
     const res = await fetch('/api/access', {
@@ -140,6 +150,79 @@ export default function Settings() {
           <h1 style={{ fontSize: 24 }}>Settings</h1>
           <p style={{ margin: 0 }}>Keys are stored in your database, never in code. Secrets stay masked.</p>
         </Card>
+
+        {/* DESKTOP WORKER APP */}
+        {setupInfo && (
+          <Card delay={0.04}>
+            <div className="card-title" style={{ justifyContent: 'space-between' }}>
+              <span>🖥️ Worker app (runs the engine on your PC)</span>
+              <span className={`tag ${setupInfo.worker?.online ? 'ok' : ''}`} style={{ textTransform: 'none', letterSpacing: 0 }}>
+                {setupInfo.worker?.online
+                  ? `● online${setupInfo.worker.info?.platform ? ` (${setupInfo.worker.info.platform})` : ''}`
+                  : '○ not running'}
+              </span>
+            </div>
+
+            <p style={{ color: 'var(--muted)', fontSize: 14, marginTop: 0 }}>
+              Download once, run it, and paste the key below when it asks.
+              The Node runtime and ffmpeg are included — nothing else to install.
+            </p>
+
+            <div className="row" style={{ marginBottom: 14 }}>
+              <motion.a className="btn lg" href={setupInfo.downloadPage} target="_blank" rel="noreferrer"
+                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} style={{ display: 'inline-flex' }}>
+                ⬇ Download Windows app
+              </motion.a>
+            </div>
+
+            <div className="field">
+              <label>
+                Your REDIS_URL
+                <span className="tag">paste this once, in the app</span>
+              </label>
+              <div className="row" style={{ gap: 8 }}>
+                <input
+                  className="input"
+                  style={{ flex: 1, fontFamily: 'monospace', fontSize: 12 }}
+                  type={showRedis ? 'text' : 'password'}
+                  readOnly
+                  value={setupInfo.redisUrl || 'not configured'}
+                />
+                <MotionButton type="button" className="btn ghost" style={{ padding: '9px 14px' }}
+                  onClick={() => setShowRedis((v) => !v)}>
+                  {showRedis ? 'Hide' : 'Show'}
+                </MotionButton>
+                <MotionButton type="button" className="btn" style={{ padding: '9px 14px' }}
+                  disabled={!setupInfo.hasRedisUrl}
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(setupInfo.redisUrl);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    } catch (_) { setShowRedis(true); }
+                  }}>
+                  {copied ? '✓ Copied' : 'Copy'}
+                </MotionButton>
+              </div>
+            </div>
+
+            <details>
+              <summary style={{ cursor: 'pointer', color: 'var(--muted)', fontSize: 13 }}>How it works ▾</summary>
+              <div className="notice" style={{ marginTop: 10 }}>
+                <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8 }}>
+                  <li>Download <code>AISongEngineWorker-windows.zip</code> and unzip it anywhere.</li>
+                  <li>Run <code>Install.bat</code> — it adds a Desktop shortcut and starts the app.</li>
+                  <li>Paste the REDIS_URL above when it asks (first run only).</li>
+                  <li>Leave the window open — that window <b>is</b> the engine.</li>
+                </ol>
+                <div style={{ marginTop: 8 }}>
+                  The app pulls jobs from your dashboard by itself, so it needs no
+                  public address and no port forwarding.
+                </div>
+              </div>
+            </details>
+          </Card>
+        )}
 
         {/* ACCESS */}
         {me?.isOwner && access && (

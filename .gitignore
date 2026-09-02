@@ -38,3 +38,7 @@ worker/output/
 # oauth token dumps
 token.json
 refresh-token.txt
+
+# packaged desktop app build output
+worker/dist/
+worker/config.json

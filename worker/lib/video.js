@@ -3,9 +3,39 @@
 
 const { spawn, execFileSync } = require('child_process');
 
+const fsSync = require('fs');
+const pathMod = require('path');
+
+// Where to look for a real ffmpeg binary shipped alongside the app. This must
+// cover the packaged desktop app (binary sits next to the launcher, while this
+// file lives in lib/) as well as plain `npm start` and Docker.
+const IS_PACKAGED = Boolean(process.pkg);
+function appDirs() {
+  const dirs = [];
+  if (IS_PACKAGED) dirs.push(pathMod.dirname(process.execPath));
+  try {
+    if (require.main && require.main.filename) dirs.push(pathMod.dirname(require.main.filename));
+  } catch (_) {}
+  dirs.push(pathMod.join(__dirname, '..')); // app root when running from lib/
+  dirs.push(__dirname);
+  dirs.push(process.cwd());
+  return [...new Set(dirs)];
+}
+
 function resolveBinary(envVar, systemName, staticResolver) {
   if (process.env[envVar]) return process.env[envVar];
-  // `which` on macOS/Linux, `where` on Windows.
+
+  // 1. a binary shipped next to the app
+  for (const dir of appDirs()) {
+    for (const name of [`${systemName}.exe`, systemName]) {
+      const candidate = pathMod.join(dir, name);
+      try {
+        if (fsSync.existsSync(candidate) && fsSync.statSync(candidate).isFile()) return candidate;
+      } catch (_) {}
+    }
+  }
+
+  // 2. on PATH (`which` on macOS/Linux, `where` on Windows)
   const locator = process.platform === 'win32' ? 'where' : 'which';
   try {
     const found = execFileSync(locator, [systemName], { encoding: 'utf8' })
@@ -13,11 +43,18 @@ function resolveBinary(envVar, systemName, staticResolver) {
       .trim();
     if (found) return found;
   } catch (_) {}
-  return staticResolver();
+
+  // 3. the npm static binary - optional, and absent from the desktop bundle,
+  //    so a missing module must never crash the worker.
+  try {
+    const p = staticResolver();
+    if (p) return p;
+  } catch (_) {}
+
+  return systemName; // last resort: assume it is on PATH
 }
 
 const ffmpegPath = resolveBinary('FFMPEG_PATH', 'ffmpeg', () => require('ffmpeg-static'));
-const ffprobePath = resolveBinary('FFPROBE_PATH', 'ffprobe', () => require('ffprobe-static').path);
 
 // The npm ffmpeg-static build lacks drawtext (no libfreetype); the Docker image
 // installs a full ffmpeg. Detect and degrade gracefully.
@@ -31,7 +68,6 @@ try {
 // Font selection. DejaVu has no Gujarati/Devanagari glyphs, so for Indic
 // titles we look for a Noto font first (the Docker image installs fonts-noto-core)
 // and fall back to the romanized title if no suitable font exists.
-const fsSync = require('fs');
 const INDIC = /[\u0A80-\u0AFF\u0900-\u097F\u0980-\u09FF\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F]/;
 
 const LATIN_FONTS = [
@@ -92,15 +128,24 @@ function run(args) {
   });
 }
 
+/**
+ * Read an audio file's duration. We ask ffmpeg rather than shipping ffprobe:
+ * `ffmpeg -i <file>` prints "Duration: HH:MM:SS.xx" on stderr, and skipping
+ * ffprobe keeps the desktop app ~60 MB smaller.
+ * @returns {Promise<number|null>} seconds
+ */
 function probeDuration(file) {
   return new Promise((resolve) => {
-    const p = spawn(ffprobePath, [
-      '-v', 'error', '-show_entries', 'format=duration',
-      '-of', 'default=noprint_wrappers=1:nokey=1', file,
-    ]);
-    let out = '';
-    p.stdout.on('data', (d) => (out += d));
-    p.on('close', () => { const n = parseFloat(out.trim()); resolve(Number.isFinite(n) ? n : null); });
+    const p = spawn(ffmpegPath, ['-hide_banner', '-i', file]);
+    let err = '';
+    p.stderr.on('data', (d) => (err += d.toString()));
+    // ffmpeg exits non-zero when given no output file - that is expected here.
+    p.on('close', () => {
+      const m = err.match(/Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/);
+      if (!m) return resolve(null);
+      const secs = Number(m[1]) * 3600 + Number(m[2]) * 60 + parseFloat(m[3]);
+      resolve(Number.isFinite(secs) ? secs : null);
+    });
     p.on('error', () => resolve(null));
   });
 }
