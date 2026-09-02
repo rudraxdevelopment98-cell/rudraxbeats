@@ -86,7 +86,7 @@ function JobCard({ job, onAction, busy }) {
       )}
       {stalled && !job.error ? (
         <div className="job-err" style={{ color: 'var(--amber)', background: 'rgba(251,191,36,.08)', borderColor: 'rgba(251,191,36,.25)' }}>
-          ⏳ Stuck for &gt;3 min. Serverless can&apos;t run long jobs — retry, or deploy the worker (see below).
+          ⏳ No progress for &gt;3 min. Check the worker is still running on your PC, then Retry.
         </div>
       ) : null}
       <div className="row" style={{ marginTop: 12, gap: 8 }}>
@@ -144,7 +144,10 @@ export default function Home() {
         loadJobs();
         loadSchedule();
         loadReadiness();
-        pollRef.current = setInterval(loadJobs, 5000);
+        pollRef.current = setInterval(() => {
+          loadJobs();
+          loadReadiness(); // keeps the worker online/offline chip fresh
+        }, 5000);
       })
       .catch(() => router.replace('/login'));
     return () => clearInterval(pollRef.current);
@@ -226,7 +229,14 @@ export default function Home() {
         {/* SETUP STATUS */}
         {readiness && (
           <Card delay={0.08}>
-            <div className="card-title">Setup status {allReady ? '· ready ✅' : '· needs keys'}</div>
+            <div className="card-title" style={{ justifyContent: 'space-between' }}>
+            <span>Setup status {allReady ? '· ready ✅' : '· needs setup'}</span>
+            <span className={`tag ${readiness.workerOnline ? 'ok' : ''}`} style={{ textTransform: 'none', letterSpacing: 0 }}>
+              {readiness.workerOnline
+                ? `● Worker online${readiness.workerInfo?.platform ? ` (${readiness.workerInfo.platform})` : ''}`
+                : '○ Worker offline'}
+            </span>
+          </div>
             <motion.div className="stepper" variants={stagger} initial="hidden" animate="show">
               {STEPS.map((s) => (
                 <motion.div key={s} className={`node ${readiness[s] ? 'ok' : 'no'}`} variants={fadeUp}>

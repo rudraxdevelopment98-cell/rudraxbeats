@@ -102,11 +102,26 @@ async function getConfig() {
 
     ytPlaylistId: parsePlaylistId(pick('ytPlaylistId', 'YT_PLAYLIST_ID')),
     playlistTopic: pick('playlistTopic', 'PLAYLIST_TOPIC'),
-    songLanguage: pick('songLanguage', 'SONG_LANGUAGE', 'English'),
+    songLanguage: pick('songLanguage', 'SONG_LANGUAGE', 'Gujarati'),
 
     driveFolderName: pick('driveFolderName', 'DRIVE_FOLDER_NAME', 'AI Song Engine'),
     driveKeepSongs: parseInt(pick('driveKeepSongs', 'DRIVE_KEEP_SONGS', '4'), 10) || 4,
   };
 }
 
-module.exports = { client, STEPS, getJob, setJob, updateJob, popQueue, getConfig };
+/**
+ * Write a heartbeat so the dashboard can show whether a worker is connected.
+ * Important for home-PC workers, which have no public URL to probe.
+ */
+async function beat(extra = {}) {
+  const payload = {
+    ts: Date.now(),
+    platform: process.platform,
+    node: process.versions.node,
+    ...extra,
+  };
+  // Expire after 90s so a stopped worker shows as offline on its own.
+  await client.set('worker:heartbeat', JSON.stringify(payload), 'EX', 90);
+}
+
+module.exports = { client, STEPS, getJob, setJob, updateJob, popQueue, getConfig, beat };

@@ -9,7 +9,7 @@
 // Secret fields are never returned in full to the browser - getPublicConfig()
 // returns only { set, hint } for them.
 
-import { kvConfigured, kvStore } from './db.js';
+import { kvConfigured, kvStore, getWorkerHeartbeat } from './db.js';
 import { DEFAULT_GOOGLE_CLIENT_ID } from './googleClient.js';
 
 const CONFIG_KEY = 'config';
@@ -168,12 +168,17 @@ export async function getPublicConfig() {
  */
 export async function getReadiness() {
   const c = await getConfig();
+  // The worker pulls jobs from Redis, so "ready" means a worker is alive -
+  // not that a public Worker URL is configured (a home PC has none).
+  const hb = await getWorkerHeartbeat();
   return {
+    workerOnline: hb.online,
+    workerInfo: hb.info,
     lyrics: Boolean(c.openaiApiKey),
     // self-host (suno-api) needs only the wrapper URL; generic mode needs a key too
     song: Boolean(c.sunoBaseUrl) && (c.sunoMode === 'suno-api' ? true : Boolean(c.sunoApiKey)),
     thumbnail: Boolean(c.geminiApiKey),
-    video: Boolean(c.workerUrl && c.workerSecret),
+    video: hb.online,
     upload: Boolean(c.ytClientId && c.ytClientSecret && c.ytRefreshToken),
   };
 }

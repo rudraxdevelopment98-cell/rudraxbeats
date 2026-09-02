@@ -215,6 +215,23 @@ export async function listJobs(limit = 25) {
 }
 
 /**
+ * Read the worker's heartbeat. A home-PC worker has no public URL, so this is
+ * how the dashboard knows whether a worker is actually connected.
+ * @returns {Promise<{online:boolean, ageSec:number|null, info:object|null}>}
+ */
+export async function getWorkerHeartbeat() {
+  try {
+    const raw = await store.get('worker:heartbeat');
+    const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!info || !info.ts) return { online: false, ageSec: null, info: null };
+    const ageSec = Math.round((Date.now() - Number(info.ts)) / 1000);
+    return { online: ageSec < 90, ageSec, info };
+  } catch (_) {
+    return { online: false, ageSec: null, info: null };
+  }
+}
+
+/**
  * Push a job id onto the worker queue. The always-on worker (Railway/Render)
  * pops from this list and runs the full pipeline, so Vercel never has to hold
  * a multi-minute request open.

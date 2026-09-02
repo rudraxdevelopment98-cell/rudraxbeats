@@ -96,7 +96,7 @@ Whatever you pick, the setup is the same: **root directory `worker/`** and
 
 | Option | Cost | Notes |
 | --- | --- | --- |
-| **Your own PC** | Free | `cd worker && npm install && REDIS_URL=... npm start`. Best quality (no cold starts) but only runs while the PC is on. Songs also land on your disk directly. |
+| **Your own PC** (recommended) | Free | No cold starts, no limits. See "Run the worker on your own PC" below. Only runs while that PC is on. |
 | **Render free web service** | Free | 750 h/month. **Sleeps after ~15 min idle** — the dashboard pings `/health` when it enqueues, which wakes it. Add a free uptime pinger (UptimeRobot / cron-job.org) hitting `/health` every 10 min to keep it awake during long jobs. |
 | **Oracle Cloud Free Tier VM** | Free forever | A real always-on ARM VM. More setup (create VM, install Docker, run the image) but no sleeping and no limits. |
 | **Fly.io / Koyeb** | Small free allowance | Fine for one song a day. |
@@ -107,6 +107,50 @@ wake a sleeping service. That's why `/api/generate` and `/api/cron` also send a
 cheap HTTP ping to the worker's `/health`. A cold start takes ~30–60 s, then the
 job is picked up normally. For the daily cron, the uptime pinger is the reliable
 fix.
+
+#### Run the worker on your own PC (free, recommended)
+
+A spare/always-on PC is the best host: no sleeping, no quotas, and rendering is
+as fast as the machine.
+
+**1. Install the prerequisites**
+- **Node.js 18+** — <https://nodejs.org> (pick the LTS installer)
+- **ffmpeg** — optional but recommended, it enables the on-screen song title.
+  Windows: `winget install Gyan.FFmpeg` (then reopen the terminal).
+  macOS: `brew install ffmpeg`. Linux: `sudo apt install ffmpeg fonts-noto-core`.
+  Without it the engine still works — it just skips the title overlay.
+
+**2. Get the code onto that PC**
+```bash
+git clone https://github.com/<you>/rudraxbeats.git
+cd rudraxbeats/worker
+```
+(Or download the repo ZIP from GitHub and open the `worker` folder.)
+
+**3. Point it at your database**
+Copy `.env.example` → `.env`, then paste your `REDIS_URL` into it. Get the value
+from Vercel → your project → **Settings → Environment Variables → REDIS_URL**.
+That is the only thing you need — every API key comes from the dashboard.
+
+**4. Start it**
+- **Windows:** double-click **`start-windows.bat`** (installs deps the first time).
+- **macOS/Linux:** `npm install && npm start`
+
+You should see a banner confirming ffmpeg, the Indic font and `redis: configured ✓`,
+then `waiting for jobs…`. Open <http://localhost:3001/health> to confirm.
+
+**5. Keep it running after reboot (optional)**
+```bash
+npm install -g pm2
+pm2 start server.js --name song-engine
+pm2 save
+pm2 startup      # follow the printed command once
+```
+
+**Note on the Worker URL setting:** a home PC has no public URL, so leave
+**Settings → Video worker → Worker URL** blank (or `http://localhost:3001`).
+The worker pulls jobs from Redis by itself — the dashboard never needs to reach
+it. The 🧪 Test button for the worker only works for a publicly hosted one.
 
 ### 5. Self-host the Suno wrapper (uses your Suno Pro)
 1. Deploy [gcui-art/suno-api](https://github.com/gcui-art/suno-api) with its

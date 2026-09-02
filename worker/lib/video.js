@@ -5,8 +5,12 @@ const { spawn, execFileSync } = require('child_process');
 
 function resolveBinary(envVar, systemName, staticResolver) {
   if (process.env[envVar]) return process.env[envVar];
+  // `which` on macOS/Linux, `where` on Windows.
+  const locator = process.platform === 'win32' ? 'where' : 'which';
   try {
-    const found = execFileSync('which', [systemName], { encoding: 'utf8' }).trim();
+    const found = execFileSync(locator, [systemName], { encoding: 'utf8' })
+      .split(/\r?\n/)[0]
+      .trim();
     if (found) return found;
   } catch (_) {}
   return staticResolver();
@@ -32,15 +36,31 @@ const INDIC = /[\u0A80-\u0AFF\u0900-\u097F\u0980-\u09FF\u0B80-\u0BFF\u0C00-\u0C7
 
 const LATIN_FONTS = [
   process.env.FONT_PATH,
+  // Linux (Docker image)
   '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
   '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+  // Windows
+  'C:/Windows/Fonts/arialbd.ttf',
+  'C:/Windows/Fonts/arial.ttf',
+  'C:/Windows/Fonts/segoeuib.ttf',
+  // macOS
+  '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+  '/Library/Fonts/Arial.ttf',
 ];
 const INDIC_FONTS = [
   process.env.FONT_PATH_INDIC,
+  // Linux (fonts-noto-core)
   '/usr/share/fonts/truetype/noto/NotoSansGujarati-Regular.ttf',
   '/usr/share/fonts/truetype/noto/NotoSansGujarati-Bold.ttf',
   '/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf',
   '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
+  // Windows - Nirmala UI ships with Windows and covers Gujarati/Devanagari
+  'C:/Windows/Fonts/NirmalaB.ttf',
+  'C:/Windows/Fonts/Nirmala.ttf',
+  'C:/Windows/Fonts/NotoSansGujarati-Regular.ttf',
+  // macOS
+  '/System/Library/Fonts/Supplemental/Gujarati Sangam MN.ttc',
+  '/Library/Fonts/NotoSansGujarati-Regular.ttf',
 ];
 
 const firstExisting = (list) => list.filter(Boolean).find((f) => { try { return fsSync.existsSync(f); } catch (_) { return false; } }) || null;
