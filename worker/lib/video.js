@@ -191,6 +191,80 @@ async function renderVideo({ audioFile, imageFile, titleFile, outFile, title, ti
   return { durationSec: dur };
 }
 
+
+/**
+ * Build the video from real clips (e.g. made by hand in Flow AI) instead of a
+ * still image.
+ *
+ * Two passes, because clips vary in size/codec/fps and are usually far shorter
+ * than the song:
+ *   1. normalise every clip to 1080p30 and concatenate them (no audio)
+ *   2. loop that montage with -stream_loop and mux the song over it
+ *
+ * @returns {Promise<{durationSec:number, clipsUsed:number}>}
+ */
+async function renderVideoFromClips({ clipPaths, audioFile, titleFile, outFile, title, titleRoman, workDir }) {
+  if (!clipPaths || clipPaths.length === 0) throw new Error('no clips supplied');
+  const dur = (await probeDuration(audioFile)) || 150;
+  const base = pathMod.join(workDir, 'montage.mp4');
+
+  // --- pass 1: normalise + concat -----------------------------------------
+  const inputs = [];
+  const parts = [];
+  clipPaths.forEach((clip, i) => {
+    inputs.push('-i', clip);
+    parts.push(
+      `[${i}:v]scale=1920:1080:force_original_aspect_ratio=increase,` +
+        `crop=1920:1080,setsar=1,fps=30,format=yuv420p[c${i}]`
+    );
+  });
+  const concatIn = clipPaths.map((_, i) => `[c${i}]`).join('');
+  const filter = `${parts.join(';')};${concatIn}concat=n=${clipPaths.length}:v=1:a=0[v]`;
+
+  await run([
+    '-y',
+    ...inputs,
+    '-filter_complex', filter,
+    '-map', '[v]',
+    '-an',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+    '-pix_fmt', 'yuv420p',
+    base,
+  ]);
+
+  // --- pass 2: loop to the song's length, add audio and the title ---------
+  const chosen = chooseTitle(title, titleRoman);
+  const drawOverlay = HAS_DRAWTEXT && titleFile && chosen.text;
+  if (drawOverlay) fsSync.writeFileSync(titleFile, sanitize(chosen.text));
+
+  const args = [
+    '-y',
+    '-stream_loop', '-1', '-i', base, // repeat the montage until the audio ends
+    '-i', audioFile,
+  ];
+  if (drawOverlay) {
+    args.push(
+      '-filter_complex',
+      `[0:v]drawtext=fontfile='${chosen.font}':textfile='${titleFile}':fontcolor=white:` +
+        `fontsize=64:box=1:boxcolor=black@0.45:boxborderw=24:x=(w-text_w)/2:y=90[v]`,
+      '-map', '[v]'
+    );
+  } else {
+    args.push('-map', '0:v');
+  }
+  args.push(
+    '-map', '1:a',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '192k',
+    '-shortest', '-movflags', '+faststart',
+    outFile
+  );
+  await run(args);
+
+  return { durationSec: dur, clipsUsed: clipPaths.length };
+}
+
 /** Solid gradient fallback if no thumbnail was produced. */
 async function makeFallbackImage(outFile) {
   await run([
@@ -200,4 +274,13 @@ async function makeFallbackImage(outFile) {
   ]);
 }
 
-module.exports = { renderVideo, makeFallbackImage, sanitize, ffmpegPath, HAS_DRAWTEXT, FONT_PATH, FONT_PATH_INDIC };
+module.exports = {
+  renderVideo,
+  renderVideoFromClips,
+  makeFallbackImage,
+  sanitize,
+  ffmpegPath,
+  HAS_DRAWTEXT,
+  FONT_PATH,
+  FONT_PATH_INDIC,
+};

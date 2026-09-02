@@ -104,6 +104,9 @@ async function getConfig() {
     playlistTopic: pick('playlistTopic', 'PLAYLIST_TOPIC'),
     songLanguage: pick('songLanguage', 'SONG_LANGUAGE', 'Gujarati'),
 
+    videoMode: pick('videoMode', 'VIDEO_MODE', 'auto'),
+    clipsPerSong: parseInt(pick('clipsPerSong', 'CLIPS_PER_SONG', '3'), 10) || 3,
+
     driveRefreshToken: pick('driveRefreshToken', 'DRIVE_REFRESH_TOKEN'),
     driveFolderName: pick('driveFolderName', 'DRIVE_FOLDER_NAME', 'AI Song Engine'),
     driveKeepSongs: parseInt(pick('driveKeepSongs', 'DRIVE_KEEP_SONGS', '4'), 10) || 4,

@@ -11,8 +11,9 @@ const path = require('path');
 
 const { updateJob, getConfig } = require('./store');
 const { generateLyrics, generateSong, generateThumbnail } = require('./steps');
-const { renderVideo, makeFallbackImage, sanitize } = require('./video');
+const { renderVideo, renderVideoFromClips, makeFallbackImage, sanitize } = require('./video');
 const { storeSong, enforceRetention } = require('./drive');
+const clips = require('./clips');
 const { uploadToYoutube, addToPlaylist } = require('./youtube');
 
 // Overall progress weighting per step (sums to 100).
@@ -117,16 +118,50 @@ async function runJob(jobId) {
     await progress('thumbnail', 100, 'Cover art ready');
 
     // 4) VIDEO -------------------------------------------------------------
+    // Prefer real clips the user dropped in the clips/ folder (made in Flow AI
+    // or anywhere else). When there are none — or the mode says otherwise —
+    // fall back to the generated cover image so the channel never stalls.
     await setStep('video', 'running');
-    await progress('video', 10, 'Rendering video with ffmpeg…');
+    const mode = cfg.videoMode || 'auto';
+    let picked = [];
+    if (mode === 'auto' || mode === 'clips') {
+      clips.ensureDirs();
+      picked = clips.takeClips(cfg.clipsPerSong || 3);
+    }
+
+    let usedClips = 0;
     try {
-      await renderVideo({
-        audioFile, imageFile, titleFile, outFile,
-        title: song.title, titleRoman: song.titleRoman,
-      });
+      if (picked.length) {
+        await progress('video', 10, `Building video from ${picked.length} clip(s)…`);
+        const r = await renderVideoFromClips({
+          clipPaths: picked.map((c) => c.path),
+          audioFile, titleFile, outFile,
+          title: song.title, titleRoman: song.titleRoman,
+          workDir: work,
+        });
+        usedClips = r.clipsUsed;
+        await clips.markUsed(picked); // never reuse the same clip
+      } else {
+        if (mode === 'clips') {
+          // Explicitly asked for clips but the folder is empty - say so, then
+          // still publish with the cover image rather than failing the run.
+          console.warn(`[job ${jobId}] no clips available, using the cover image instead`);
+        }
+        await progress('video', 10, 'Rendering video from the cover image…');
+        await renderVideo({
+          audioFile, imageFile, titleFile, outFile,
+          title: song.title, titleRoman: song.titleRoman,
+        });
+      }
     } catch (e) { return fail('video', e); }
-    await updateJob(jobId, { steps: { video: 'done' } });
-    await progress('video', 100, 'Video rendered');
+
+    await updateJob(jobId, {
+      steps: { video: 'done' },
+      videoSource: usedClips ? 'clips' : 'thumbnail',
+      clipsUsed: usedClips,
+      clipsRemaining: clips.countClips(),
+    });
+    await progress('video', 100, usedClips ? `Video built from ${usedClips} clip(s)` : 'Video rendered');
 
     // 5) DRIVE + YOUTUBE ---------------------------------------------------
     await setStep('upload', 'running');

@@ -80,6 +80,7 @@ function JobCard({ job, onAction, busy }) {
       {job.error ? <div className="job-err">⚠ {job.error}</div> : null}
       {job.status === 'done' && (
         <div className="job-meta" style={{ marginTop: 8 }}>
+          {job.videoSource === 'clips' ? `🎬 ${job.clipsUsed} clip(s) used · ` : job.videoSource === 'thumbnail' ? '🖼️ cover-image video · ' : ''}
           {job.playlistAdded ? '🎼 Added to playlist · ' : ''}
           {job.driveFiles?.length ? `💾 ${job.driveFiles.length} file(s) in Drive` : ''}
         </div>
@@ -231,10 +232,19 @@ export default function Home() {
           <Card delay={0.08}>
             <div className="card-title" style={{ justifyContent: 'space-between' }}>
             <span>Setup status {allReady ? '· ready ✅' : '· needs setup'}</span>
-            <span className={`tag ${readiness.workerOnline ? 'ok' : ''}`} style={{ textTransform: 'none', letterSpacing: 0 }}>
-              {readiness.workerOnline
-                ? `● Worker online${readiness.workerInfo?.platform ? ` (${readiness.workerInfo.platform})` : ''}`
-                : '○ Worker offline'}
+            <span className="row" style={{ gap: 8 }}>
+              {readiness.workerOnline && readiness.workerInfo?.clipsAvailable != null && (
+                <span className={`tag ${readiness.workerInfo.clipsAvailable > 0 ? 'ok' : ''}`}
+                  style={{ textTransform: 'none', letterSpacing: 0 }}
+                  title="Hand-made clips waiting in the worker's clips folder">
+                  🎬 {readiness.workerInfo.clipsAvailable} clip{readiness.workerInfo.clipsAvailable === 1 ? '' : 's'}
+                </span>
+              )}
+              <span className={`tag ${readiness.workerOnline ? 'ok' : ''}`} style={{ textTransform: 'none', letterSpacing: 0 }}>
+                {readiness.workerOnline
+                  ? `● Worker online${readiness.workerInfo?.platform ? ` (${readiness.workerInfo.platform})` : ''}`
+                  : '○ Worker offline'}
+              </span>
             </span>
           </div>
             <motion.div className="stepper" variants={stagger} initial="hidden" animate="show">

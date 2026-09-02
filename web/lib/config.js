@@ -48,6 +48,10 @@ export const FIELDS = {
   playlistTopic: { env: 'PLAYLIST_TOPIC', default: '', label: 'Playlist subject / category (songs are written about this)', group: 'Playlist & content' },
   songLanguage: { env: 'SONG_LANGUAGE', default: 'Gujarati', label: 'Song language', group: 'Playlist & content' },
 
+  // Video source
+  videoMode: { env: 'VIDEO_MODE', default: 'auto', label: 'Mode: auto (clips if available) / clips / thumbnail', group: 'Video source' },
+  clipsPerSong: { env: 'CLIPS_PER_SONG', default: '3', label: 'Clips to use per song', group: 'Video source' },
+
   // Storage (Google Drive) + local sync
   driveRefreshToken: { env: 'DRIVE_REFRESH_TOKEN', secret: true, label: 'Drive Refresh Token (use Connect Drive above)', group: 'Storage (Google Drive)' },
   driveFolderName: { env: 'DRIVE_FOLDER_NAME', default: 'AI Song Engine', label: 'Drive folder name', group: 'Storage (Google Drive)' },

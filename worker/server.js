@@ -16,6 +16,7 @@ const express = require('express');
 const { popQueue, getJob, updateJob, client, beat } = require('./lib/store');
 const { runJob } = require('./lib/pipeline');
 const { ffmpegPath, HAS_DRAWTEXT } = require('./lib/video');
+const clips = require('./lib/clips');
 
 const PORT = process.env.PORT || 3001;
 
@@ -45,6 +46,8 @@ app.listen(PORT, () => {
   console.log(`  title overlay  : ${HAS_DRAWTEXT ? 'yes' : 'NO (install real ffmpeg for titles)'}`);
   console.log(`  indic font     : ${FONT_PATH_INDIC || 'not found (will use romanized titles)'}`);
   console.log(`  redis          : ${process.env.REDIS_URL ? 'configured ✓' : 'MISSING ✗  set REDIS_URL in .env'}`);
+  clips.ensureDirs();
+  console.log(`  video clips    : ${clips.countClips()} waiting  (${clips.clipsDir()})`);
   console.log('  ─────────────────────────────────────────────');
   console.log('  waiting for jobs… (press Ctrl+C to stop)');
   console.log('');
@@ -94,8 +97,14 @@ async function loop() {
 
 // Heartbeat so the dashboard can show "worker online" even for a home PC.
 const sendBeat = () =>
-  beat({ processed: state.processed, failed: state.failed, current: state.current })
-    .catch(() => {});
+  beat({
+    processed: state.processed,
+    failed: state.failed,
+    current: state.current,
+    // so the dashboard can show how many hand-made clips are still queued
+    clipsAvailable: clips.countClips(),
+    clipsDir: clips.clipsDir(),
+  }).catch(() => {});
 sendBeat();
 setInterval(sendBeat, 20000);
 

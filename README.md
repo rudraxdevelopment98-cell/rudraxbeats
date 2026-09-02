@@ -201,6 +201,29 @@ Set **Playlist ID/URL** and **Playlist subject** in Settings. Then:
 Want a second category? Change the subject and playlist, and the next songs
 follow the new theme.
 
+## Video source — hand-made clips (Flow AI etc.) or the cover image
+
+Tools like Flow AI cap how many clips you can make per day, so the engine treats
+clips as an **optional upgrade** rather than a requirement:
+
+| Mode (Settings → 🎬 Video source) | What happens |
+| --- | --- |
+| `auto` *(default)* | Use clips when the folder has some, otherwise the cover image. |
+| `clips` | Prefer clips; still falls back to the cover image rather than failing. |
+| `thumbnail` | Always the generated cover image + waveform. |
+
+**How to feed it clips:** drop the videos you made into the **`clips`** folder
+next to the worker app (it is created on first run, with a note inside). The
+engine takes the oldest `Clips per song` files (default 3), scales them all to
+1080p30, joins them, loops that montage for the length of the song, then moves
+those files into `clips/used` so nothing is ever reused. The dashboard shows how
+many clips are still waiting — a stock of 30 clips at 3 per song is 10 days of
+video without touching Flow again.
+
+Clips live on the PC rather than Drive on purpose: the Drive connection uses the
+`drive.file` scope, which can only see files this app created, so clips uploaded
+by hand would be invisible to it.
+
 ## Gujarati (and other Indic languages)
 
 Set **Settings → Playlist & content → Song language** to `Gujarati` (the default).
