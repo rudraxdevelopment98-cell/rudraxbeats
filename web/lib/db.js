@@ -62,6 +62,13 @@ function makeTcpStore(url) {
       const arr = await client.lrange(key, start, stop);
       return (arr || []).map(dec);
     },
+    async del(key) {
+      await client.del(key);
+    },
+    async lrem(key, count, val) {
+      // lpush stored JSON-encoded values, so match that encoding here.
+      await client.lrem(key, count, JSON.stringify(val));
+    },
   };
 }
 
@@ -93,6 +100,13 @@ const memStore = {
   async lrange(_key, start, stop) {
     const end = stop === -1 ? mem.index.length : stop + 1;
     return mem.index.slice(start, end);
+  },
+  async del(key) {
+    if (key === 'schedule') mem.schedule = null;
+    else mem.jobs.delete(key);
+  },
+  async lrem(_key, _count, val) {
+    mem.index = mem.index.filter((x) => x !== val);
   },
 };
 
@@ -196,6 +210,23 @@ export async function listJobs(limit = 25) {
   if (!ids || ids.length === 0) return [];
   const jobs = await Promise.all(ids.map((id) => getJob(id)));
   return jobs.filter(Boolean);
+}
+
+/** Permanently remove a job and drop it from the index. */
+export async function deleteJob(id) {
+  if (!id) return false;
+  await store.lrem('jobs:index', 0, id);
+  await store.del(`job:${id}`);
+  return true;
+}
+
+/** Mark a job cancelled (best-effort; a serverless run may still be mid-flight). */
+export async function cancelJob(id) {
+  const job = await getJob(id);
+  if (!job) return null;
+  const steps = { ...job.steps };
+  for (const s of STEPS) if (steps[s] === 'running') steps[s] = 'error';
+  return updateJob(id, { status: 'error', steps, error: 'Cancelled by user' });
 }
 
 // --- schedule --------------------------------------------------------------

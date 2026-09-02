@@ -34,7 +34,10 @@ function Segments({ steps }) {
   );
 }
 
-function JobCard({ job }) {
+function JobCard({ job, onAction, busy }) {
+  const stalled =
+    job.status === 'running' && Date.now() - new Date(job.updatedAt).getTime() > 3 * 60 * 1000;
+  const status = stalled ? 'stalled' : job.status;
   return (
     <motion.div
       className="job"
@@ -58,10 +61,22 @@ function JobCard({ job }) {
             ) : null}
           </div>
         </div>
-        <span className={`badge ${job.status}`}>{job.status}</span>
+        <span className={`badge ${stalled ? 'error' : job.status}`}>{status}</span>
       </div>
       <Segments steps={job.steps} />
       {job.error ? <div className="job-err">⚠ {job.error}</div> : null}
+      {stalled && !job.error ? (
+        <div className="job-err" style={{ color: 'var(--amber)', background: 'rgba(251,191,36,.08)', borderColor: 'rgba(251,191,36,.25)' }}>
+          ⏳ Stuck for &gt;3 min. Serverless can&apos;t run long jobs — retry, or deploy the worker (see below).
+        </div>
+      ) : null}
+      <div className="row" style={{ marginTop: 12, gap: 8 }}>
+        <MotionButton className="btn ghost" style={{ padding: '7px 14px', fontSize: 13 }} disabled={busy} onClick={() => onAction(job.id, 'retry')}>↻ Retry</MotionButton>
+        {job.status === 'running' && (
+          <MotionButton className="btn ghost" style={{ padding: '7px 14px', fontSize: 13 }} disabled={busy} onClick={() => onAction(job.id, 'cancel')}>⏸ Cancel</MotionButton>
+        )}
+        <MotionButton className="btn danger" style={{ padding: '7px 14px', fontSize: 13 }} disabled={busy} onClick={() => onAction(job.id, 'delete')}>🗑 Delete</MotionButton>
+      </div>
     </motion.div>
   );
 }
@@ -129,6 +144,21 @@ export default function Home() {
       setMessage(`Error: ${e.message}`);
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const [actionBusy, setActionBusy] = useState(false);
+  const doAction = async (id, action) => {
+    setActionBusy(true);
+    try {
+      await fetch('/api/job-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action }),
+      });
+      await loadJobs();
+    } catch (_) {} finally {
+      setActionBusy(false);
     }
   };
 
@@ -222,7 +252,7 @@ export default function Home() {
         ) : (
           <motion.div variants={stagger} initial="hidden" animate="show">
             <AnimatePresence initial={false}>
-              {jobs.map((job) => <JobCard key={job.id} job={job} />)}
+              {jobs.map((job) => <JobCard key={job.id} job={job} onAction={doAction} busy={actionBusy} />)}
             </AnimatePresence>
           </motion.div>
         )}

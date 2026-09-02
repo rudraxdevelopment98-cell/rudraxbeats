@@ -12,6 +12,12 @@ const GROUP_ICON = {
   'Video worker': '🎬',
   'YouTube upload': '⬆️',
 };
+const GROUP_TEST = {
+  'Lyrics (OpenAI)': 'openai',
+  'Song (Suno)': 'suno',
+  'Thumbnail (Gemini)': 'gemini',
+  'Video worker': 'worker',
+};
 const YT_MSG = {
   connected: { ok: true, text: '✅ YouTube channel connected.' },
   norefresh: { ok: false, text: 'Google returned no refresh token — revoke at myaccount.google.com/permissions and reconnect.' },
@@ -28,6 +34,18 @@ export default function Settings() {
   const [me, setMe] = useState(null);
   const [access, setAccess] = useState(null);
   const [newEmail, setNewEmail] = useState('');
+  const [tests, setTests] = useState({}); // target -> { loading, ok, message }
+
+  const runTest = async (target) => {
+    setTests((t) => ({ ...t, [target]: { loading: true } }));
+    try {
+      const r = await fetch(`/api/test?target=${target}`);
+      const d = await r.json();
+      setTests((t) => ({ ...t, [target]: { ok: d.ok, message: d.message || (d.ok ? 'OK' : 'Failed') } }));
+    } catch (e) {
+      setTests((t) => ({ ...t, [target]: { ok: false, message: e.message } }));
+    }
+  };
 
   const load = useCallback(async () => {
     const res = await fetch('/api/config');
@@ -184,7 +202,25 @@ export default function Settings() {
         <form onSubmit={save}>
           {GROUP_ORDER.filter((g) => grouped[g]).map((group, i) => (
             <Card key={group} delay={0.14 + i * 0.04}>
-              <div className="card-title">{GROUP_ICON[group]} {group}</div>
+              <div className="card-title" style={{ justifyContent: 'space-between' }}>
+                <span>{GROUP_ICON[group]} {group}</span>
+                {GROUP_TEST[group] && (
+                  <MotionButton
+                    type="button"
+                    className="btn ghost"
+                    style={{ padding: '5px 12px', fontSize: 12, textTransform: 'none', letterSpacing: 0 }}
+                    onClick={() => runTest(GROUP_TEST[group])}
+                    disabled={tests[GROUP_TEST[group]]?.loading}
+                  >
+                    {tests[GROUP_TEST[group]]?.loading ? <span className="spin" /> : '🧪 Test'}
+                  </MotionButton>
+                )}
+              </div>
+              {GROUP_TEST[group] && tests[GROUP_TEST[group]] && !tests[GROUP_TEST[group]].loading && (
+                <div className={tests[GROUP_TEST[group]].ok ? 'ok-note' : 'notice'} style={{ marginBottom: 14 }}>
+                  {tests[GROUP_TEST[group]].ok ? '✓ ' : '✗ '}{tests[GROUP_TEST[group]].message}
+                </div>
+              )}
               {grouped[group].map(([key, f]) => (
                 <div className="field" key={key}>
                   <label>
