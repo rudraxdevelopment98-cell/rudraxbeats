@@ -75,10 +75,22 @@ const looksLikeRedisUrl = (v) => /^rediss?:\/\/.+@.+:\d+/.test(String(v || '').t
 
 function ask(question) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => rl.question(question, (a) => { rl.close(); resolve(a); }));
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (a) => { if (done) return; done = true; rl.close(); resolve(a); };
+    rl.question(question, finish);
+    // No console attached (a service, a CI run): resolve instead of hanging.
+    rl.on('close', () => finish(''));
+  });
 }
 
 async function firstRunWizard() {
+  if (!process.stdin.isTTY) {
+    console.log('');
+    console.log('  REDIS_URL is not set, and there is no console here to ask for it.');
+    console.log('  Set REDIS_URL in the environment, or run this app by double-clicking it once.');
+    return false;
+  }
   console.log('');
   console.log('  Welcome! This is a one-time setup.');
   console.log('');
@@ -114,9 +126,19 @@ async function firstRunWizard() {
   return false;
 }
 
+// Exit codes the .bat launcher understands:
+//   0 = you stopped it on purpose (Ctrl+C)   -> stay stopped
+//   2 = setup is incomplete, a human must type something -> stay stopped
+//   anything else = it fell over             -> restart automatically
+const EXIT_SETUP = 2;
+const EXIT_CRASH = 3;
+
 function keepWindowOpen(message) {
   console.log('');
   console.log(`  ${message}`);
+  // Only a double-clicked window needs holding open; with no console attached
+  // (a scheduled task, CI) waiting for a keypress would hang forever.
+  if (!process.stdin.isTTY) return;
   console.log('  Press Enter to close this window.');
   try {
     // Block so a double-clicked window doesn't vanish before it can be read.
@@ -126,6 +148,18 @@ function keepWindowOpen(message) {
   }
 }
 
+// An unattended worker must not die from a stray rejection - a failed Redis
+// write during a long render should be logged and shrugged off, not fatal.
+process.on('unhandledRejection', (err) => {
+  console.error(`  ! background error (ignored): ${err && err.message ? err.message : err}`);
+});
+// An uncaught exception does leave unknown state, so exit - with a code that
+// tells the launcher script to start us again.
+process.on('uncaughtException', (err) => {
+  console.error(`  ✗ crashed: ${err && err.stack ? err.stack : err}`);
+  process.exit(EXIT_CRASH);
+});
+
 (async function main() {
   banner();
   loadEnvFile();
@@ -133,7 +167,10 @@ function keepWindowOpen(message) {
 
   if (!process.env.REDIS_URL) {
     const ok = await firstRunWizard();
-    if (!ok) return keepWindowOpen('Setup was not completed.');
+    if (!ok) {
+      keepWindowOpen('Setup was not completed.');
+      process.exit(EXIT_SETUP);
+    }
   }
 
   try {
@@ -143,5 +180,6 @@ function keepWindowOpen(message) {
     console.error('  ✗ The worker failed to start:');
     console.error(`    ${e && e.message ? e.message : e}`);
     keepWindowOpen('Fix the problem above and run this app again.');
+    process.exit(EXIT_CRASH);
   }
 })();

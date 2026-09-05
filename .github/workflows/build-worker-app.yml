@@ -111,6 +111,9 @@ jobs:
           Write-Host $out
           if ($out -notmatch 'AI SONG ENGINE') { throw 'launcher did not start' }
           if ($out -match 'Cannot find module') { throw 'a dependency is missing from the bundle' }
+          # The launcher exits 2 for "setup not finished", which is the expected
+          # outcome here - don't let that exit code fail the step.
+          $global:LASTEXITCODE = 0
 
       - name: Zip it
         shell: pwsh

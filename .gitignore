@@ -42,3 +42,7 @@ refresh-token.txt
 # packaged desktop app build output
 worker/dist/
 worker/config.json
+
+# runtime folders created by the worker on the PC it runs on
+worker/clips/
+worker/Songs/

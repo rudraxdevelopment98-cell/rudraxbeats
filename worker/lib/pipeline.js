@@ -43,11 +43,14 @@ async function runJob(jobId) {
   const setStep = (step, status, extra = {}) =>
     updateJob(jobId, { step, status: 'running', steps: { [step]: status }, ...extra });
 
+  // Progress writes are cosmetic: some callers fire them without awaiting (the
+  // Suno and scene-painting callbacks), so a Redis hiccup here must never turn
+  // into an unhandled rejection that kills an unattended worker.
   const progress = (step, pct, note) =>
     updateJob(jobId, {
       progress: Math.min(99, Math.round(START[step] + (WEIGHT[step] * pct) / 100)),
       note,
-    });
+    }).catch((e) => console.warn(`[job ${jobId}] progress write failed: ${e.message}`));
 
   const fail = async (step, err) => {
     const message = err && err.message ? err.message : String(err);
