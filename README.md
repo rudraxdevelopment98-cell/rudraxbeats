@@ -213,12 +213,18 @@ Everything below happens on its own; none of it needs a click.
 | **Failures** | A failed run retries by itself with a growing back-off (3 min → 15 min → 45 min), `Automatic retries` times. The dashboard shows the next retry instead of asking you to press Retry. |
 | **Reboots / crashes** | On start-up the worker re-queues any song that was left half-finished, and any job that was enqueued while the PC was off. |
 | **Storage** | Drive keeps the newest N songs and deletes older ones; the PC copy is written automatically. |
+| **Credential watch** | Every hour the worker checks the Suno cookie (and credits left) and both Google logins. Problems show as one banner in the dashboard *before* a night's run fails. |
 | **Double runs** | The dashboard cron and the worker's own scheduler claim the same daily key in Redis, so a day can only ever fire once. Vercel's cron only steps in when the worker is offline. |
 
-**The one thing that can still need you:** the Suno cookie in your
-`suno-api` deployment expires every few weeks. When Suno starts rejecting
-requests the dashboard shows a single amber banner telling you to paste a fresh
-cookie — nothing else in the pipeline ever asks for attention.
+**The only things that can still need you** are the two credentials that expire
+on their own, and the dashboard tells you the moment either does:
+
+- **Suno cookie** — the cookie in your `suno-api` deployment dies every few
+  weeks (and the banner also warns when credits run low). Paste a fresh one.
+- **Google login** — if your Google Cloud OAuth app is still in *Testing*, Google
+  expires the refresh token **every 7 days**. Fix it once: APIs & Services →
+  OAuth consent screen → **Publish app**. Then the login lasts indefinitely and
+  nothing needs touching again.
 
 ## Video source — AI scenes by default, hand-made clips optional
 

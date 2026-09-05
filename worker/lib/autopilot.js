@@ -11,8 +11,9 @@
 
 const {
   getSchedule, getConfig, createJob, enqueueJob, claim, listRecentJobIds,
-  getJob, updateJob, scheduleRetry, dueRetries, client,
+  getJob, updateJob, scheduleRetry, dueRetries, setAlert, client,
 } = require('./store');
+const { runChecks } = require('./health');
 
 // How long a running job may go without a progress write before we assume the
 // worker died mid-song and re-queue it.
@@ -162,6 +163,24 @@ async function recoverStuckJobs() {
   return recovered;
 }
 
+// --- credential watch -----------------------------------------------------
+// The cookie and the Google tokens are the only things here that rot on their
+// own. Checking them hourly means the dashboard warns before a run fails,
+// instead of the user finding out from a missing upload the next morning.
+const HEALTH_EVERY_MS = 60 * 60 * 1000;
+let lastHealthAt = 0;
+
+async function healthTick(force = false) {
+  if (!force && Date.now() - lastHealthAt < HEALTH_EVERY_MS) return null;
+  lastHealthAt = Date.now();
+  const cfg = await getConfig();
+  const problem = await runChecks(cfg);
+  // runChecks re-derives the truth every time, so clearing here is safe.
+  await setAlert(problem ? problem.text : null);
+  if (problem) console.warn(`[autopilot] needs attention: ${problem.text}`);
+  return problem;
+}
+
 /** Status block for the heartbeat, so the dashboard can show the autopilot. */
 async function status() {
   try {
@@ -186,9 +205,13 @@ function start({ intervalMs = 30000 } = {}) {
   const tick = async () => {
     try { await drainRetries(); } catch (e) { console.warn(`[autopilot] retry drain: ${e.message}`); }
     try { await maybeFireDaily(); } catch (e) { console.warn(`[autopilot] schedule: ${e.message}`); }
+    try { await healthTick(); } catch (e) { console.warn(`[autopilot] health check: ${e.message}`); }
   };
   tick();
   return setInterval(tick, intervalMs);
 }
 
-module.exports = { start, status, handleFailure, recoverStuckJobs, drainRetries, maybeFireDaily, localNow };
+module.exports = {
+  start, status, handleFailure, recoverStuckJobs, drainRetries, maybeFireDaily,
+  healthTick, localNow,
+};
