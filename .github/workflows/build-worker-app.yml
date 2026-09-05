@@ -85,6 +85,15 @@ jobs:
           Leave the window open - that window IS the engine. Your dashboard will
           show "Worker online". Close the window to stop it.
 
+          HANDS-FREE
+            - Videos are made here automatically (AI scene images + motion), so
+              the "clips" folder is optional - drop clips in only if you want to
+              use your own.
+            - Finished songs are saved to the folder set in Settings, or to the
+              "Songs" folder next to this app if you leave that blank.
+            - The daily run, retries after a failure and recovery after a
+              restart all happen on their own. Just leave this running.
+
           Everything is included: Node runtime, ffmpeg, all dependencies.
           Nothing else to install.
           "@ | Out-File -Encoding utf8 "$dist/README.txt"
