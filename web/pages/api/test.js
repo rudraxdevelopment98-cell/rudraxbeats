@@ -18,8 +18,24 @@ async function testOpenAI(c) {
 async function testGemini(c) {
   if (!c.geminiApiKey) return { ok: false, message: 'No Gemini key set.' };
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${c.geminiApiKey}`);
-  if (r.ok) return { ok: true, message: 'Gemini key works ✓' };
-  return { ok: false, message: `Gemini rejected the key (${r.status}).` };
+  if (!r.ok) return { ok: false, message: `Gemini rejected the key (${r.status}).` };
+
+  // A working key is not enough: the cover art and the AI scene video both need
+  // a model that can actually return an image on this key.
+  const data = await r.json().catch(() => ({}));
+  const names = (data.models || [])
+    .map((m) => String(m.name || '').replace(/^models\//, ''))
+    .filter((n) => /image/i.test(n));
+  if (!names.length) {
+    return {
+      ok: false,
+      message:
+        'Key works, but no image-capable model is available on it — cover art and ' +
+        'AI scene videos would fall back to a plain gradient. Enable the Generative ' +
+        'Language API image models for this key (or use a key from a project that has them).',
+    };
+  }
+  return { ok: true, message: `Gemini key works ✓ (image model: ${names[0]})` };
 }
 
 async function testSuno(c) {

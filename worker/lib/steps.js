@@ -267,14 +267,26 @@ async function generateSong(cfg, { title, lyrics, style_tags }, onProgress = () 
 }
 
 // ------------------------------------------------------------- thumbnail ---
-/**
- * One Gemini image call. Shared by the cover art and by the AI scene images
- * used for the hands-free music video.
- * @returns {Promise<Buffer>} PNG/JPEG bytes
- */
-async function geminiImage(cfg, prompt) {
-  if (!cfg.geminiApiKey) throw new Error('Gemini API key is not set (Settings \u2192 Thumbnail)');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiImageModel}:generateContent?key=${cfg.geminiApiKey}`;
+// Google renames its image models often, and a model id that has been retired
+// fails every image call — which would silently drop the engine back to a
+// static cover. So try the configured model first, then known-good ids, and
+// remember whichever one answered.
+const IMAGE_MODELS = [
+  'gemini-2.5-flash-image',
+  'gemini-2.0-flash-preview-image-generation',
+  'gemini-2.0-flash-exp-image-generation',
+];
+let workingImageModel = null;
+
+/** Is this failure "wrong model id" (worth trying another) or something real? */
+const isModelProblem = (msg) =>
+  /\b404\b|not found|NOT_FOUND|is not supported|does not support|no image/i.test(String(msg));
+
+// Overridable so the fallback logic can be exercised against a stub.
+const GEMINI_ROOT = process.env.GEMINI_API_ROOT || 'https://generativelanguage.googleapis.com/v1beta';
+
+async function geminiImageOnce(cfg, model, prompt) {
+  const url = `${GEMINI_ROOT}/models/${model}:generateContent?key=${cfg.geminiApiKey}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -285,16 +297,48 @@ async function geminiImage(cfg, prompt) {
   });
   if (!res.ok) {
     const b = await res.text().catch(() => '');
-    throw new Error(`Gemini image failed (${res.status}): ${b.slice(0, 300)}`);
+    throw new Error(`Gemini image failed (${res.status}) on ${model}: ${b.slice(0, 300)}`);
   }
   const data = await res.json();
   const parts = data?.candidates?.[0]?.content?.parts || [];
   const p = parts.find((x) => x.inlineData?.data || x.inline_data?.data);
   const inline = p?.inlineData || p?.inline_data;
-  if (!inline?.data) {
-    throw new Error(`Gemini returned no image (model "${cfg.geminiImageModel}" may not support images)`);
-  }
+  if (!inline?.data) throw new Error(`Gemini returned no image from ${model}`);
   return Buffer.from(inline.data, 'base64');
+}
+
+/**
+ * One Gemini image, with automatic model fallback. Shared by the cover art and
+ * by the AI scene images used for the hands-free music video.
+ * @returns {Promise<Buffer>} PNG/JPEG bytes
+ */
+async function geminiImage(cfg, prompt) {
+  if (!cfg.geminiApiKey) throw new Error('Gemini API key is not set (Settings \u2192 Thumbnail)');
+
+  const tried = [];
+  const candidates = [workingImageModel, cfg.geminiImageModel, ...IMAGE_MODELS]
+    .filter((m) => m && !tried.includes(m) && (tried.push(m) || true));
+
+  let lastErr = null;
+  for (const model of candidates) {
+    try {
+      const buf = await geminiImageOnce(cfg, model, prompt);
+      if (workingImageModel !== model) {
+        workingImageModel = model;
+        console.log(`[gemini] using image model ${model}`);
+      }
+      return buf;
+    } catch (e) {
+      lastErr = e;
+      // A bad key, a quota problem or a blocked prompt won't be fixed by
+      // switching models - fail immediately instead of burning the whole list.
+      if (!isModelProblem(e.message)) throw e;
+      if (workingImageModel === model) workingImageModel = null;
+    }
+  }
+  throw new Error(
+    `${lastErr ? lastErr.message : 'Gemini image failed'} (tried: ${candidates.join(', ')})`
+  );
 }
 
 async function generateThumbnail(cfg, { title, mood, styleTags }) {

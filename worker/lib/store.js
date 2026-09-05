@@ -93,7 +93,9 @@ async function getConfig() {
     sunoStatusPath: pick('sunoStatusPath', 'SUNO_STATUS_PATH', '/api/status'),
 
     geminiApiKey: pick('geminiApiKey', 'GEMINI_API_KEY'),
-    geminiImageModel: pick('geminiImageModel', 'GEMINI_IMAGE_MODEL', 'gemini-2.0-flash-preview-image-generation'),
+    // blank on purpose: steps.js tries known-good image models and remembers
+    // whichever one answers, so a retired model id can't break the pipeline
+    geminiImageModel: pick('geminiImageModel', 'GEMINI_IMAGE_MODEL'),
 
     ytClientId: pick('ytClientId', 'YT_CLIENT_ID'),
     ytClientSecret: pick('ytClientSecret', 'YT_CLIENT_SECRET'),

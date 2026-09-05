@@ -31,7 +31,7 @@ export const FIELDS = {
 
   // Thumbnail (Gemini)
   geminiApiKey: { env: 'GEMINI_API_KEY', secret: true, label: 'Gemini API Key', group: 'Thumbnail (Gemini)' },
-  geminiImageModel: { env: 'GEMINI_IMAGE_MODEL', default: 'gemini-2.0-flash-preview-image-generation', label: 'Gemini Image Model', group: 'Thumbnail (Gemini)' },
+  geminiImageModel: { env: 'GEMINI_IMAGE_MODEL', default: '', label: 'Gemini image model (leave blank — the worker picks one that works)', group: 'Thumbnail (Gemini)' },
 
   // Video worker
   workerUrl: { env: 'WORKER_URL', label: 'Worker URL', group: 'Video worker' },
