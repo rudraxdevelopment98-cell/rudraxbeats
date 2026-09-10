@@ -209,7 +209,7 @@ Everything below happens on its own; none of it needs a click.
 | What | How it works |
 | --- | --- |
 | **Daily songs** | The worker fires the run itself at the time set in the dashboard, read in **your timezone** (Settings → 🤖 Autopilot). Changing the time takes effect immediately — no redeploy. `Songs per day` queues more than one. |
-| **Video** | No clips needed: AI scenes are painted and animated automatically (see below). |
+| **Video** | No clips needed: AI scenes are painted and animated automatically (see below), or flip the dashboard's **Poster mode** toggle to publish cover + audio only. |
 | **Failures** | A failed run retries by itself with a growing back-off (3 min → 15 min → 45 min), `Automatic retries` times. The dashboard shows the next retry instead of asking you to press Retry. |
 | **Reboots / crashes** | On start-up the worker re-queues any song that was left half-finished, and any job that was enqueued while the PC was off. |
 | **Storage** | Drive keeps the newest N songs and deletes older ones; the PC copy is written automatically. |
@@ -236,10 +236,18 @@ zoom out, pan back) and cross-fades them under the song.
 
 | Mode (Settings → 🎬 Video source) | What happens |
 | --- | --- |
+| `poster` | **No video making at all** — the cover art is held over the song. Renders in seconds. |
 | `auto` *(default)* | Clips when the folder has some → otherwise **AI scenes** → otherwise the cover image. |
 | `scenes` | Always the AI scene video (no clips needed, nothing to do by hand). |
 | `clips` | Prefer clips; falls back to AI scenes, then the cover image. |
 | `thumbnail` | Always the generated cover image + waveform (cheapest, fastest). |
+
+**Poster mode** has its own toggle on the dashboard, next to the daily schedule,
+because it is the one setting worth flipping day to day: switch it on to start
+publishing now (cover + audio, a few seconds to render, one Gemini image), and
+switch it off whenever you want full videos again. YouTube has no audio-only
+upload, so "just the audio" always means a still picture over the song — poster
+mode is that, with nothing extra.
 
 `AI scenes per song` (default 4) and `Seconds per scene` (default 8) control the
 length and cost of the montage; four scenes ≈ four Gemini images per song.

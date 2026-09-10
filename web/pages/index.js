@@ -8,6 +8,8 @@ const STEPS = ['lyrics', 'song', 'thumbnail', 'video', 'upload'];
 const STEP_ICON = { lyrics: '✍️', song: '🎵', thumbnail: '🖼️', video: '🎬', upload: '⬆️' };
 const READY_LABEL = { lyrics: 'OpenAI', song: 'Suno', thumbnail: 'Gemini', video: 'Worker', upload: 'YouTube' };
 const VIDEO_MODE_LABEL = {
+  poster: 'poster only (audio)',
+  audio: 'poster only (audio)',
   auto: 'clips → AI scenes',
   scenes: 'AI scenes',
   clips: 'hand-made clips',
@@ -93,7 +95,8 @@ function JobCard({ job, onAction, busy }) {
         <div className="job-meta" style={{ marginTop: 8 }}>
           {job.videoSource === 'clips' ? `🎬 ${job.clipsUsed} clip(s) used · `
             : job.videoSource === 'scenes' ? `🎨 ${job.scenesUsed} AI scenes · `
-              : '🖼️ cover-image video · '}
+              : job.videoSource === 'poster' ? '🖼️ poster + audio · '
+                : '🖼️ cover-image video · '}
           {job.playlistAdded ? '🎼 Added to playlist · ' : ''}
           {job.driveFiles?.length ? `💾 ${job.driveFiles.length} file(s) in Drive` : ''}
           {job.localDir ? ` · 📁 saved to ${job.localDir}` : ''}
@@ -123,6 +126,7 @@ export default function Home() {
   const [jobs, setJobs] = useState([]);
   const [schedule, setSchedule] = useState({ enabled: false, hour: 14, minute: 0 });
   const [readiness, setReadiness] = useState(null);
+  const [videoMode, setVideoMode] = useState('auto');
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState('');
   const pollRef = useRef(null);
@@ -146,9 +150,29 @@ export default function Home() {
   const loadReadiness = useCallback(async () => {
     try {
       const res = await fetch('/api/config');
-      if (res.ok) setReadiness((await res.json()).readiness || null);
+      if (!res.ok) return;
+      const data = await res.json();
+      setReadiness(data.readiness || null);
+      setVideoMode(data.fields?.videoMode?.value || 'auto');
     } catch (_) {}
   }, []);
+
+  // The one setting worth flipping from the dashboard: whether today's song
+  // gets a full video or just its cover over the audio.
+  const saveVideoMode = async (next) => {
+    setVideoMode(next); // optimistic - the poll below corrects it if the save fails
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoMode: next }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setVideoMode(data.fields?.videoMode?.value || next);
+      }
+    } catch (_) {}
+  };
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -215,6 +239,7 @@ export default function Home() {
 
   const allReady = readiness && STEPS.every((s) => readiness[s]);
   const auto = readiness?.autopilot || null;
+  const posterOnly = videoMode === 'poster' || videoMode === 'audio';
   const alert = readiness?.alert || null;
 
   if (!ready) return <Loader />;
@@ -314,9 +339,23 @@ export default function Home() {
               onChange={(e) => setSchedule({ ...schedule, minute: Number(e.target.value) })} onBlur={() => saveSchedule({})} />
           </div>
 
+          <div className="row toggle-row">
+            <Toggle on={posterOnly} onClick={() => saveVideoMode(posterOnly ? 'auto' : 'poster')} />
+            <div>
+              <div style={{ fontWeight: 600 }}>
+                {posterOnly ? '🖼️ Poster mode — cover + audio only' : '🎬 Full video — AI scenes'}
+              </div>
+              <div className="hint" style={{ margin: '3px 0 0' }}>
+                Poster mode skips video making completely: the cover art is held over the song and
+                it renders in seconds. Good for getting songs out now — switch it off any time to
+                go back to full videos.
+              </div>
+            </div>
+          </div>
+
           <motion.div className="auto-grid" variants={stagger} initial="hidden" animate="show">
             {[
-              ['🎬', 'Visuals', VIDEO_MODE_LABEL[auto?.videoMode || 'auto'] || 'AI scenes'],
+              ['🎬', 'Visuals', VIDEO_MODE_LABEL[videoMode] || videoMode],
               ['🎵', 'Songs per day', auto?.songsPerDay ?? 1],
               ['↻', 'Auto-retry', auto?.autoRetries ? `${auto.autoRetries}× on failure` : 'off'],
               ['📁', 'Saved to PC', auto?.localSave ? 'yes' : 'not set'],

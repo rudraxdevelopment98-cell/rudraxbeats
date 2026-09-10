@@ -193,6 +193,55 @@ async function renderVideo({ audioFile, imageFile, titleFile, outFile, title, ti
 
 
 /**
+ * Audio + poster: one still cover image held for the whole song, no motion and
+ * no waveform. YouTube has no audio-only upload, so this is what "just release
+ * the audio" actually means - and it is by far the cheapest thing to render,
+ * which is the point: a song can go out in seconds while the fancier visuals
+ * are still being tuned.
+ *
+ * A low frame rate is deliberate: the picture never changes, so 30fps would
+ * encode 30x the frames for an identical result. YouTube accepts it happily.
+ *
+ * @returns {Promise<{durationSec:number}>}
+ */
+async function renderPosterVideo({ audioFile, imageFile, titleFile, outFile, title, titleRoman, fps = 5 }) {
+  const dur = (await probeDuration(audioFile)) || 150;
+  const chosen = chooseTitle(title, titleRoman);
+  const drawOverlay = HAS_DRAWTEXT && titleFile && chosen.text;
+  if (drawOverlay) fsSync.writeFileSync(titleFile, sanitize(chosen.text));
+
+  // Build the poster frame ONCE. Filtering inside the encode would redo this
+  // work for every frame of a picture that never changes.
+  const poster = pathMod.join(pathMod.dirname(outFile), 'poster.png');
+  await run([
+    '-y', '-i', imageFile,
+    '-vf',
+    `scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1` +
+      (drawOverlay
+        ? `,drawtext=fontfile='${chosen.font}':textfile='${titleFile}':fontcolor=white:` +
+          `fontsize=64:box=1:boxcolor=black@0.45:boxborderw=24:x=(w-text_w)/2:y=h-text_h-90`
+        : ''),
+    '-frames:v', '1', poster,
+  ]);
+
+  await run([
+    '-y',
+    '-loop', '1', '-framerate', String(fps), '-i', poster,
+    '-i', audioFile,
+    '-map', '0:v', '-map', '1:a',
+    '-c:v', 'libx264', '-tune', 'stillimage', '-preset', 'veryfast', '-crf', '23',
+    '-r', String(fps), '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '192k',
+    // -t as well as -shortest: at a low frame rate the muxer can otherwise
+    // overshoot the audio by a whole group of frames.
+    '-t', dur.toFixed(2), '-shortest', '-movflags', '+faststart',
+    outFile,
+  ]);
+
+  return { durationSec: dur };
+}
+
+/**
  * Second pass shared by every "moving picture" mode: take a finished montage
  * (silent, 1080p30), loop it for the whole song, mux the audio and draw the
  * title. `waveform` adds the audio-reactive bar used by the AI-scene mode.
@@ -419,6 +468,7 @@ async function makeFallbackImage(outFile) {
 
 module.exports = {
   renderVideo,
+  renderPosterVideo,
   renderVideoFromClips,
   renderVideoFromScenes,
   makeKenBurnsClip,

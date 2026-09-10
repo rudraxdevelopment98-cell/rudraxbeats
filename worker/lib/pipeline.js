@@ -11,7 +11,7 @@ const path = require('path');
 
 const { updateJob, getConfig, setAlert } = require('./store');
 const { generateLyrics, generateSong, generateThumbnail } = require('./steps');
-const { renderVideo, renderVideoFromClips, renderVideoFromScenes, makeFallbackImage, sanitize } = require('./video');
+const { renderVideo, renderPosterVideo, renderVideoFromClips, renderVideoFromScenes, makeFallbackImage, sanitize } = require('./video');
 const { generateSceneImages } = require('./scenes');
 const { storeSong, enforceRetention } = require('./drive');
 const { saveLocally } = require('./localsave');
@@ -130,14 +130,16 @@ async function runJob(jobId) {
     await progress('thumbnail', 100, 'Cover art ready');
 
     // 4) VIDEO -------------------------------------------------------------
-    // Hands-free by design. Three sources, tried in this order:
+    // Hands-free by design. Four sources:
+    //   poster  - just the cover image over the song (fastest; "audio release")
     //   clips   - real clips dropped in the clips/ folder (Flow AI etc.)
     //   scenes  - AI-painted shots, Ken-Burns + cross-fade (needs no human)
-    //   cover   - the single cover image with a waveform (always works)
+    //   cover   - the cover image with a slow zoom and a waveform
     // `videoMode` picks the starting point; every mode falls through to the
     // cover image rather than failing the run.
     await setStep('video', 'running');
     const mode = cfg.videoMode || 'auto';
+    const posterOnly = mode === 'poster' || mode === 'audio';
     let picked = [];
     if (mode === 'auto' || mode === 'clips') {
       clips.ensureDirs();
@@ -147,7 +149,13 @@ async function runJob(jobId) {
     let usedClips = 0;
     let usedScenes = 0;
     try {
-      if (picked.length) {
+      if (posterOnly) {
+        await progress('video', 20, 'Placing the cover over the song…');
+        await renderPosterVideo({
+          audioFile, imageFile, titleFile, outFile,
+          title: song.title, titleRoman: song.titleRoman,
+        });
+      } else if (picked.length) {
         await progress('video', 10, `Building video from ${picked.length} clip(s)…`);
         const r = await renderVideoFromClips({
           clipPaths: picked.map((c) => c.path),
@@ -200,7 +208,7 @@ async function runJob(jobId) {
       }
     } catch (e) { return fail('video', e); }
 
-    const videoSource = usedClips ? 'clips' : usedScenes ? 'scenes' : 'thumbnail';
+    const videoSource = posterOnly ? 'poster' : usedClips ? 'clips' : usedScenes ? 'scenes' : 'thumbnail';
     await updateJob(jobId, {
       steps: { video: 'done' },
       videoSource,
@@ -210,9 +218,10 @@ async function runJob(jobId) {
     });
     await progress(
       'video', 100,
-      usedClips ? `Video built from ${usedClips} clip(s)`
-        : usedScenes ? `Video built from ${usedScenes} AI scenes`
-          : 'Video rendered'
+      posterOnly ? 'Cover + audio ready'
+        : usedClips ? `Video built from ${usedClips} clip(s)`
+          : usedScenes ? `Video built from ${usedScenes} AI scenes`
+            : 'Video rendered'
     );
 
     // 5) DRIVE + YOUTUBE ---------------------------------------------------

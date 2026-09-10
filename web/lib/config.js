@@ -54,7 +54,7 @@ export const FIELDS = {
   autoRetries: { env: 'AUTO_RETRIES', default: '2', label: 'Automatic retries after a failure', group: 'Autopilot' },
 
   // Video source
-  videoMode: { env: 'VIDEO_MODE', default: 'auto', label: 'Mode: auto (clips → AI scenes → cover) / scenes / clips / thumbnail', group: 'Video source' },
+  videoMode: { env: 'VIDEO_MODE', default: 'auto', label: 'Mode: poster (cover + audio, fastest) / auto (clips → AI scenes → cover) / scenes / clips / thumbnail', group: 'Video source' },
   clipsPerSong: { env: 'CLIPS_PER_SONG', default: '3', label: 'Clips to use per song (clips mode)', group: 'Video source' },
   sceneCount: { env: 'SCENE_COUNT', default: '4', label: 'AI scenes per song (scenes mode)', group: 'Video source' },
   sceneSeconds: { env: 'SCENE_SECONDS', default: '8', label: 'Seconds per scene before it cross-fades', group: 'Video source' },
