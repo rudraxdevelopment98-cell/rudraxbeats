@@ -8,6 +8,8 @@
   ],
   "functions": {
     "pages/api/generate.js": { "maxDuration": 60 },
-    "pages/api/cron.js": { "maxDuration": 60 }
+    "pages/api/cron.js": { "maxDuration": 60 },
+    "pages/api/test.js": { "maxDuration": 30 },
+    "pages/api/preview-lyrics.js": { "maxDuration": 30 }
   }
 }

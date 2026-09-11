@@ -28,6 +28,7 @@ async function testLyrics(c) {
         `Write two original lines of a ${language} song about ${c.playlistTopic || 'a village evening'}. ` +
         (nonLatin ? 'Write them in the native script, then the same two lines romanized on the next line.' : ''),
       maxTokens: 600,
+      deadlineMs: 20000, // a serverless request can't wait out every busy model
     });
     return {
       ok: true,
@@ -38,7 +39,9 @@ async function testLyrics(c) {
   } catch (e) {
     const msg = e.message || String(e);
     let hint = '';
-    if (/429|quota|credit_balance_exhausted|RESOURCE_EXHAUSTED/i.test(msg)) {
+    if (/\b(503|500|502|504)\b|UNAVAILABLE|high demand|overloaded/i.test(msg)) {
+      hint = ' Google\'s models are busy right now — this one is temporary, try again in a minute.';
+    } else if (/429|quota|credit_balance_exhausted|RESOURCE_EXHAUSTED/i.test(msg)) {
       hint = provider === 'openai'
         ? ' This OpenAI account has no credit left. Switch the provider to Gemini (free) on this page, or add credit.'
         : ' The Gemini free tier is used up for now — it resets on its own; try again later.';

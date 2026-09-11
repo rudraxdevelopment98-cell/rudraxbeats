@@ -14,13 +14,23 @@ const GEMINI_ROOT = process.env.GEMINI_API_ROOT || 'https://generativelanguage.g
 // Model ids move around; try the current ones and keep whichever answers.
 const GEMINI_TEXT_MODELS = [
   'gemini-2.5-flash',
-  'gemini-2.0-flash',
   'gemini-flash-latest',
+  'gemini-2.0-flash',
   'gemini-2.5-flash-lite',
+  'gemini-flash-lite-latest',
+  'gemini-2.0-flash-lite',
 ];
 
+// This model id is wrong/retired - another one may work.
 const isModelProblem = (msg) =>
   /\b404\b|not found|NOT_FOUND|is not supported|does not support/i.test(String(msg));
+
+// The model is fine but busy right now. Worth waiting a moment and retrying,
+// and worth trying a sibling model - Google's capacity varies per model.
+const isBusy = (msg) =>
+  /\b(429|500|502|503|504)\b|UNAVAILABLE|INTERNAL|overloaded|high demand|RESOURCE_EXHAUSTED/i.test(String(msg));
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Which provider a config is set to, and whether it can actually run. */
 function lyricsProvider(cfg) {
@@ -82,14 +92,28 @@ async function chat(cfg, req) {
     const candidates = [cfg.geminiTextModel, ...GEMINI_TEXT_MODELS].filter(
       (m) => m && !tried.includes(m) && (tried.push(m) || true)
     );
+    // Callers on a clock (a serverless request) can cap the whole search.
+    const started = Date.now();
+    const outOfTime = () => req.deadlineMs && Date.now() - started > req.deadlineMs;
+
     let lastErr = null;
     for (const model of candidates) {
-      try {
-        return await geminiOnce(cfg, model, req);
-      } catch (e) {
-        lastErr = e;
-        if (!isModelProblem(e.message)) throw e; // quota, bad key, blocked prompt
+      // Two goes at each model: a busy model is usually fine a second later.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          return await geminiOnce(cfg, model, req);
+        } catch (e) {
+          lastErr = e;
+          const busy = isBusy(e.message);
+          // A bad key, a blocked prompt or an answer that ran out of room
+          // won't be fixed by waiting or by another model.
+          if (!busy && !isModelProblem(e.message)) throw e;
+          if (!busy) break;               // wrong model id - go to the next one
+          if (outOfTime()) throw lastErr;
+          if (attempt === 0) await sleep(1500);
+        }
       }
+      if (outOfTime()) throw lastErr;
     }
     throw lastErr || new Error('Gemini text failed');
   }
