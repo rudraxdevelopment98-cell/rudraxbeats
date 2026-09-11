@@ -32,7 +32,7 @@ export function lyricsReady(cfg) {
   return lyricsProvider(cfg) === 'openai' ? Boolean(cfg.openaiApiKey) : Boolean(cfg.geminiApiKey);
 }
 
-async function geminiOnce(cfg, model, { system, user, json, maxTokens }) {
+async function geminiOnce(cfg, model, { system, user, json, maxTokens }, noThinking = true) {
   const res = await fetch(`${GEMINI_ROOT}/models/${model}:generateContent?key=${cfg.geminiApiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -41,23 +41,31 @@ async function geminiOnce(cfg, model, { system, user, json, maxTokens }) {
       contents: [{ role: 'user', parts: [{ text: user }] }],
       generationConfig: {
         temperature: 0.9,
-        maxOutputTokens: maxTokens || 2048,
+        maxOutputTokens: maxTokens || 4096,
+        // Gemini 2.5 "thinks" before answering and that reasoning is billed to
+        // the SAME output budget, so a song can come back as a truncated
+        // fragment. We want lyrics, not deliberation - turn it off.
+        ...(noThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
         ...(json ? { responseMimeType: 'application/json' } : {}),
       },
     }),
   });
   if (!res.ok) {
     const b = await res.text().catch(() => '');
+    // Older models reject thinkingConfig outright; retry without it.
+    if (noThinking && /thinking/i.test(b)) return geminiOnce(cfg, model, { system, user, json, maxTokens }, false);
     throw new Error(`Gemini text failed (${res.status}) on ${model}: ${b.slice(0, 250)}`);
   }
   const data = await res.json();
-  const text = (data?.candidates?.[0]?.content?.parts || [])
-    .map((p) => p.text || '')
-    .join('')
-    .trim();
+  const cand = data?.candidates?.[0];
+  const text = (cand?.content?.parts || []).map((p) => p.text || '').join('').trim();
   if (!text) {
-    const why = data?.candidates?.[0]?.finishReason || data?.promptFeedback?.blockReason || 'empty answer';
+    const why = cand?.finishReason || data?.promptFeedback?.blockReason || 'empty answer';
     throw new Error(`Gemini returned no text from ${model} (${why})`);
+  }
+  // A cut-off answer is worse than no answer: it silently produces half a song.
+  if (cand?.finishReason === 'MAX_TOKENS') {
+    throw new Error(`Gemini ran out of output room on ${model} - raise maxOutputTokens`);
   }
   return { text, model, usage: data?.usageMetadata?.totalTokenCount };
 }

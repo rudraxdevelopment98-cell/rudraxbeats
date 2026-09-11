@@ -27,7 +27,7 @@ async function testLyrics(c) {
       user:
         `Write two original lines of a ${language} song about ${c.playlistTopic || 'a village evening'}. ` +
         (nonLatin ? 'Write them in the native script, then the same two lines romanized on the next line.' : ''),
-      maxTokens: 200,
+      maxTokens: 600,
     });
     return {
       ok: true,
