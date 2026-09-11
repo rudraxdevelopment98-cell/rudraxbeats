@@ -67,7 +67,12 @@ export function Nav({ user }) {
     await fetch('/api/auth/logout', { method: 'POST' });
     router.replace('/login');
   };
-  const onSettings = router.pathname === '/settings';
+  // Three destinations now, so a simple "there and back" toggle isn't enough.
+  const links = [
+    { href: '/', label: '🏠 Dashboard' },
+    { href: '/pipeline', label: '🔍 Pipeline' },
+    { href: '/settings', label: '⚙️ Settings' },
+  ].filter((l) => l.href !== router.pathname);
   return (
     <motion.nav
       className="nav"
@@ -85,9 +90,11 @@ export function Nav({ user }) {
             <span className="hide-sm">{user.email}</span>
           </span>
         )}
-        <Link href={onSettings ? '/' : '/settings'} className="chip" style={{ fontWeight: 600, color: 'var(--text)' }}>
-          {onSettings ? '← Dashboard' : '⚙️ Settings'}
-        </Link>
+        {links.map((l) => (
+          <Link key={l.href} href={l.href} className="chip" style={{ fontWeight: 600, color: 'var(--text)' }}>
+            {l.label}
+          </Link>
+        ))}
         <MotionButton className="btn ghost" onClick={logout} style={{ padding: '7px 14px' }}>
           Log out
         </MotionButton>

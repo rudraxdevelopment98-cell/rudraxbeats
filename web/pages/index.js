@@ -308,7 +308,10 @@ export default function Home() {
               ))}
             </motion.div>
             {!allReady && (
-              <div className="hint">Add the missing keys in <a href="/settings" style={{ color: 'var(--violet)', fontWeight: 600 }}>Settings</a> before generating.</div>
+              <div className="hint">
+                Open the <a href="/pipeline" style={{ color: 'var(--violet)', fontWeight: 600 }}>Pipeline</a> page to
+                set up each stage and test it on its own — it tells you exactly which one is not ready.
+              </div>
             )}
           </Card>
         )}

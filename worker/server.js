@@ -118,6 +118,10 @@ const sendBeat = async () => {
       // so the dashboard can show how many hand-made clips are still queued
       clipsAvailable: clips.countClips(),
       clipsDir: clips.clipsDir(),
+      // what this machine can actually render, for the pipeline page's test
+      ffmpeg: Boolean(ffmpegPath),
+      drawtext: HAS_DRAWTEXT,
+      indicFont: Boolean(require('./lib/video').FONT_PATH_INDIC),
       autopilot: await autopilot.status(),
     });
   } catch (_) {}

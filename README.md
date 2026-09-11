@@ -202,6 +202,32 @@ Set **Playlist ID/URL** and **Playlist subject** in Settings. Then:
 Want a second category? Change the subject and playlist, and the next songs
 follow the new theme.
 
+## The Pipeline page
+
+`/pipeline` shows the run as six nodes — **Lyrics → Song → Cover art → Video →
+YouTube → Storage** — and each node carries everything that stage needs:
+
+- **what it does**, in one line;
+- a **model picker** filled from *your own key* (`/api/models` asks OpenAI or
+  Google what that key may actually call, so a retired model id can't linger in
+  a hardcoded list) with the cheap sensible choice marked ★;
+- the **keys for that stage only**, saved with one button;
+- **how to get the credential**, as numbered steps with the right link;
+- a **test that does the stage's real job**, not a key-format check:
+
+| Node | What its test actually does |
+| --- | --- |
+| Lyrics | Writes two real lines in your song language and shows them |
+| Song | Asks your suno-api for the session limit → proves the cookie is alive, shows credits left (and how many songs that is) |
+| Cover art | Generates a real image and displays it |
+| Video | Reports the worker's ffmpeg, fonts, clip count and current mode |
+| YouTube | Asks which channel the login controls and verifies the playlist id exists |
+| Storage | Opens the Drive folder and counts what's in it |
+
+A dot on each node shows *needs setup / configured / tested ✓ / failed ✗*, and
+**Test whole pipeline** runs all six in order so one screen tells you whether
+tonight's song will work.
+
 ## Hands-free — what runs without you
 
 Everything below happens on its own; none of it needs a click.
