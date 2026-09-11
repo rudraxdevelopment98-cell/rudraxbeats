@@ -6,7 +6,8 @@ import { Background, Nav, Card, MotionButton, Toggle, Loader, fadeUp, stagger } 
 
 const STEPS = ['lyrics', 'song', 'thumbnail', 'video', 'upload'];
 const STEP_ICON = { lyrics: '✍️', song: '🎵', thumbnail: '🖼️', video: '🎬', upload: '⬆️' };
-const READY_LABEL = { lyrics: 'OpenAI', song: 'Suno', thumbnail: 'Gemini', video: 'Worker', upload: 'YouTube' };
+// Lyrics can run on Gemini or OpenAI, so the label names the stage, not a vendor.
+const READY_LABEL = { lyrics: 'Lyrics', song: 'Suno', thumbnail: 'Gemini', video: 'Worker', upload: 'YouTube' };
 const VIDEO_MODE_LABEL = {
   poster: 'poster only (audio)',
   audio: 'poster only (audio)',

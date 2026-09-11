@@ -11,6 +11,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 
 const { geminiImage } = require('./steps');
+const { chat } = require('./llm');
 
 // House style so the shots of one song look like they belong together.
 const LOOK =
@@ -36,53 +37,34 @@ async function planScenes(cfg, { title, titleRoman, mood, styleTags, topic, lang
     return beats.slice(0, count).map((b) => `${subject} - ${b}. ${LOOK}`);
   };
 
-  if (!cfg.openaiApiKey) return fallback();
-
   try {
-    const res = await fetch(`${cfg.openaiBaseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.openaiApiKey}` },
-      body: JSON.stringify({
-        model: cfg.openaiModel,
-        temperature: 0.8,
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a music-video director. You describe photographic shots for an ' +
-              'image model: concrete subject, setting, time of day, camera framing. ' +
-              'No text or lettering in the frame. Respond with clean JSON only.',
-          },
-          {
-            role: 'user',
-            content: [
-              `Song title: "${title}"${titleRoman ? ` (${titleRoman})` : ''}.`,
-              language ? `Sung in ${language}.` : '',
-              topic ? `Channel/playlist subject: ${topic}.` : '',
-              mood ? `Mood: ${mood}.` : '',
-              styleTags ? `Musical style: ${styleTags}.` : '',
-              '',
-              `Write ${count} different shots that together tell this song's story.`,
-              'Each shot must stand on its own as a single image, share the same visual',
-              'style, and contain no readable text.',
-              '',
-              `Respond with ONLY: { "scenes": [ ${count} strings in English ] }`,
-            ].filter(Boolean).join('\n'),
-          },
-        ],
-      }),
+    const { text } = await chat(cfg, {
+      system:
+        'You are a music-video director. You describe photographic shots for an ' +
+        'image model: concrete subject, setting, time of day, camera framing. ' +
+        'No text or lettering in the frame. Respond with clean JSON only.',
+      user: [
+        `Song title: "${title}"${titleRoman ? ` (${titleRoman})` : ''}.`,
+        language ? `Sung in ${language}.` : '',
+        topic ? `Channel/playlist subject: ${topic}.` : '',
+        mood ? `Mood: ${mood}.` : '',
+        styleTags ? `Musical style: ${styleTags}.` : '',
+        '',
+        `Write ${count} different shots that together tell this song's story.`,
+        'Each shot must stand on its own as a single image, share the same visual',
+        'style, and contain no readable text.',
+        '',
+        `Respond with ONLY: { "scenes": [ ${count} strings in English ] }`,
+      ].filter(Boolean).join('\n'),
+      json: true,
     });
-    if (!res.ok) throw new Error(`OpenAI shot list failed (${res.status})`);
-    const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content || '';
-    const parsed = JSON.parse(content.replace(/```json|```/g, '').trim());
+    const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
     const list = (Array.isArray(parsed.scenes) ? parsed.scenes : [])
-      .map((s) => String(s || '').trim())
+      .map((x) => String(x || '').trim())
       .filter(Boolean)
       .slice(0, count);
     if (list.length < 2) return fallback();
-    return list.map((s) => `${s} ${LOOK}`);
+    return list.map((x) => `${x} ${LOOK}`);
   } catch (e) {
     console.warn(`scene planning fell back to templates: ${e.message}`);
     return fallback();
