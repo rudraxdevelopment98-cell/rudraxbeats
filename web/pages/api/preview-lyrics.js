@@ -16,7 +16,7 @@ export default async function handler(req, res) {
   if (!(await requireAuth(req, res))) return;
   try {
     const cfg = await getConfig();
-    const song = await generateLyrics(cfg);
+    const song = await generateLyrics(cfg, { timeoutMs: 12000, deadlineMs: 20000 });
     return res.status(200).json({
       ok: true,
       language: song.language,

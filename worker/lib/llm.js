@@ -28,9 +28,26 @@ const isModelProblem = (msg) =>
 // The model is fine but busy right now. Worth waiting a moment and retrying,
 // and worth trying a sibling model - Google's capacity varies per model.
 const isBusy = (msg) =>
-  /\b(429|500|502|503|504)\b|UNAVAILABLE|INTERNAL|overloaded|high demand|RESOURCE_EXHAUSTED/i.test(String(msg));
+  /\b(429|500|502|503|504)\b|UNAVAILABLE|INTERNAL|overloaded|high demand|RESOURCE_EXHAUSTED|no answer within/i.test(
+    String(msg)
+  );
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// A provider that accepts the connection and then stalls is the worst case:
+// without this, one hung request burns the whole serverless budget and the
+// browser gets Vercel's HTML timeout page instead of a JSON answer.
+async function fetchWithTimeout(url, init, timeoutMs) {
+  const ms = timeoutMs || 60000;
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(ms) });
+  } catch (e) {
+    if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+      throw new Error(`no answer within ${Math.round(ms / 1000)}s (the model is busy)`);
+    }
+    throw e;
+  }
+}
 
 /** Which provider a config is set to, and whether it can actually run. */
 function lyricsProvider(cfg) {
@@ -42,8 +59,9 @@ function lyricsReady(cfg) {
   return lyricsProvider(cfg) === 'openai' ? Boolean(cfg.openaiApiKey) : Boolean(cfg.geminiApiKey);
 }
 
-async function geminiOnce(cfg, model, { system, user, json, maxTokens }, noThinking = true) {
-  const res = await fetch(`${GEMINI_ROOT}/models/${model}:generateContent?key=${cfg.geminiApiKey}`, {
+async function geminiOnce(cfg, model, req, noThinking = true) {
+  const { system, user, json, maxTokens } = req;
+  const res = await fetchWithTimeout(`${GEMINI_ROOT}/models/${model}:generateContent?key=${cfg.geminiApiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -59,11 +77,11 @@ async function geminiOnce(cfg, model, { system, user, json, maxTokens }, noThink
         ...(json ? { responseMimeType: 'application/json' } : {}),
       },
     }),
-  });
+  }, req.timeoutMs);
   if (!res.ok) {
     const b = await res.text().catch(() => '');
     // Older models reject thinkingConfig outright; retry without it.
-    if (noThinking && /thinking/i.test(b)) return geminiOnce(cfg, model, { system, user, json, maxTokens }, false);
+    if (noThinking && /thinking/i.test(b)) return geminiOnce(cfg, model, req, false);
     throw new Error(`Gemini text failed (${res.status}) on ${model}: ${b.slice(0, 250)}`);
   }
   const data = await res.json();
@@ -95,13 +113,21 @@ async function chat(cfg, req) {
     // Callers on a clock (a serverless request) can cap the whole search.
     const started = Date.now();
     const outOfTime = () => req.deadlineMs && Date.now() - started > req.deadlineMs;
+    // As the budget runs down, give each remaining call only the time that is
+    // actually left - otherwise the last attempt overruns the whole deadline.
+    const attemptReq = () => {
+      if (!req.deadlineMs) return req;
+      const left = req.deadlineMs - (Date.now() - started);
+      return { ...req, timeoutMs: Math.max(2000, Math.min(req.timeoutMs || 60000, left)) };
+    };
 
     let lastErr = null;
     for (const model of candidates) {
       // Two goes at each model: a busy model is usually fine a second later.
       for (let attempt = 0; attempt < 2; attempt++) {
+        if (outOfTime() && lastErr) throw lastErr;
         try {
-          return await geminiOnce(cfg, model, req);
+          return await geminiOnce(cfg, model, attemptReq());
         } catch (e) {
           lastErr = e;
           const busy = isBusy(e.message);
@@ -121,7 +147,7 @@ async function chat(cfg, req) {
   if (!cfg.openaiApiKey) throw new Error('OpenAI API key is not set (Pipeline → Lyrics)');
   const base = (cfg.openaiBaseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
   const model = cfg.openaiModel || 'gpt-4o-mini';
-  const res = await fetch(`${base}/chat/completions`, {
+  const res = await fetchWithTimeout(`${base}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.openaiApiKey}` },
     body: JSON.stringify({
@@ -134,7 +160,7 @@ async function chat(cfg, req) {
         { role: 'user', content: req.user },
       ],
     }),
-  });
+  }, req.timeoutMs);
   if (!res.ok) {
     const b = await res.text().catch(() => '');
     throw new Error(`OpenAI failed (${res.status}): ${b.slice(0, 250)}`);

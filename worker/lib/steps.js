@@ -128,7 +128,14 @@ async function generateLyrics(cfg) {
   try {
     parsed = JSON.parse(content);
   } catch (_) {
-    parsed = JSON.parse(content.replace(/```json|```/g, '').trim());
+    try {
+      // some models wrap JSON in a ```json fence
+      parsed = JSON.parse(content.replace(/```json|```/g, '').trim());
+    } catch (_e) {
+      throw new Error(
+        `The model answered with prose instead of JSON - try a different model. It said: ${content.slice(0, 120)}`
+      );
+    }
   }
 
   const lyrics = String(parsed.lyrics || '').trim();

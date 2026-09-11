@@ -72,7 +72,7 @@ const isGujaratiLike = (lang) => isNonLatin(lang);
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 
 // ---------------------------------------------------------------- lyrics ---
-export async function generateLyrics(cfg) {
+export async function generateLyrics(cfg, limits = {}) {
   const language = cfg.songLanguage || 'English';
   const nonLatin = isNonLatin(language);
   const genre = pick(nonLatin ? GENRES_GU : GENRES);
@@ -126,12 +126,19 @@ export async function generateLyrics(cfg) {
   ].filter(Boolean).join('\n');
 
   // Provider-agnostic: OpenAI, or Gemini's free tier (see llm/llmChat).
-  const { text: content } = await chat(cfg, { system, user, json: true });
+  const { text: content } = await chat(cfg, { system, user, json: true, ...limits });
   let parsed;
   try {
     parsed = JSON.parse(content);
   } catch (_) {
-    parsed = JSON.parse(content.replace(/```json|```/g, '').trim());
+    try {
+      // some models wrap JSON in a ```json fence
+      parsed = JSON.parse(content.replace(/```json|```/g, '').trim());
+    } catch (_e) {
+      throw new Error(
+        `The model answered with prose instead of JSON - try a different model. It said: ${content.slice(0, 120)}`
+      );
+    }
   }
 
   const lyrics = String(parsed.lyrics || '').trim();

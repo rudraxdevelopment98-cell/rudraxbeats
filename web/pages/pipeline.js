@@ -10,6 +10,7 @@ import { useRouter } from 'next/router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Background, Nav, Card, MotionButton, Loader, fadeUp, stagger } from '../components/ui';
 import { NODES } from '../lib/pipelineSpec';
+import { readJson } from '../lib/readJson';
 
 // Which readiness flag backs each node before it has been tested.
 const READY_KEY = { lyrics: 'lyrics', song: 'song', cover: 'thumbnail', video: 'video', upload: 'upload' };
@@ -41,7 +42,8 @@ export default function Pipeline() {
   const load = useCallback(async () => {
     const res = await fetch('/api/config');
     if (res.status === 401) return router.replace('/login');
-    const data = await res.json();
+    const data = await readJson(res);
+    if (!data.fields) return; // a bad answer shouldn't wipe the page
     setFields(data.fields);
     setReadiness(data.readiness || null);
     setValues((prev) => {
@@ -80,7 +82,7 @@ export default function Pipeline() {
     setTests((t) => ({ ...t, [n.id]: { loading: true } }));
     try {
       const r = await fetch(`/api/test?target=${n.test}`);
-      const data = await r.json();
+      const data = await readJson(r);
       setTests((t) => ({ ...t, [n.id]: data }));
       return data;
     } catch (e) {
@@ -102,7 +104,7 @@ export default function Pipeline() {
     setModels((m) => ({ ...m, [target]: { loading: true } }));
     try {
       const r = await fetch(`/api/models?target=${target}`);
-      const data = await r.json();
+      const data = await readJson(r);
       setModels((m) => ({ ...m, [target]: data }));
     } catch (e) {
       setModels((m) => ({ ...m, [target]: { ok: false, message: e.message, models: [] } }));
@@ -116,7 +118,7 @@ export default function Pipeline() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     });
-    const data = await r.json();
+    const data = await readJson(r);
     if (!r.ok) throw new Error(data.error || 'Save failed');
     setFields(data.fields);
     setReadiness(data.readiness || null);

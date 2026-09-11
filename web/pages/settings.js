@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Background, Nav, Card, MotionButton, Loader, fadeUp, stagger } from '../components/ui';
+import { readJson } from '../lib/readJson';
 
 const GROUP_ORDER = ['Lyrics', 'Song (Suno)', 'Thumbnail (Gemini)', 'Video worker', 'YouTube upload', 'Playlist & content', 'Autopilot', 'Video source', 'Storage (Google Drive)'];
 const GROUP_ICON = {
@@ -58,7 +59,7 @@ export default function Settings() {
     setPreview({ loading: true });
     try {
       const r = await fetch('/api/preview-lyrics');
-      setPreview(await r.json());
+      setPreview(await readJson(r));
     } catch (e) {
       setPreview({ ok: false, error: e.message });
     }
@@ -68,7 +69,7 @@ export default function Settings() {
     setTests((t) => ({ ...t, [target]: { loading: true } }));
     try {
       const r = await fetch(`/api/test?target=${target}`);
-      const d = await r.json();
+      const d = await readJson(r);
       setTests((t) => ({ ...t, [target]: { ok: d.ok, message: d.message || (d.ok ? 'OK' : 'Failed') } }));
     } catch (e) {
       setTests((t) => ({ ...t, [target]: { ok: false, message: e.message } }));
