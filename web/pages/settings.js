@@ -4,9 +4,9 @@ import { useRouter } from 'next/router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Background, Nav, Card, MotionButton, Loader, fadeUp, stagger } from '../components/ui';
 
-const GROUP_ORDER = ['Lyrics (OpenAI)', 'Song (Suno)', 'Thumbnail (Gemini)', 'Video worker', 'YouTube upload', 'Playlist & content', 'Autopilot', 'Video source', 'Storage (Google Drive)'];
+const GROUP_ORDER = ['Lyrics', 'Song (Suno)', 'Thumbnail (Gemini)', 'Video worker', 'YouTube upload', 'Playlist & content', 'Autopilot', 'Video source', 'Storage (Google Drive)'];
 const GROUP_ICON = {
-  'Lyrics (OpenAI)': '✍️',
+  'Lyrics': '✍️',
   'Song (Suno)': '🎵',
   'Thumbnail (Gemini)': '🖼️',
   'Video worker': '🎬',
@@ -22,7 +22,7 @@ const GROUP_HINT = {
   'Storage (Google Drive)': 'Drive is the cloud copy (oldest songs auto-deleted). The local folder is written by the worker on your PC — leave it blank for a "Songs" folder next to the app.',
 };
 const GROUP_TEST = {
-  'Lyrics (OpenAI)': 'openai',
+  'Lyrics': 'openai',
   'Song (Suno)': 'suno',
   'Thumbnail (Gemini)': 'gemini',
   'Video worker': 'worker',
@@ -349,7 +349,7 @@ export default function Settings() {
               <div className="card-title" style={{ justifyContent: 'space-between' }}>
                 <span>{GROUP_ICON[group]} {group}</span>
                 <span className="row" style={{ gap: 8 }}>
-                  {group === 'Lyrics (OpenAI)' && (
+                  {group === 'Lyrics' && (
                     <MotionButton
                       type="button"
                       className="btn ghost"
@@ -381,7 +381,7 @@ export default function Settings() {
                   {tests[GROUP_TEST[group]].ok ? '✓ ' : '✗ '}{tests[GROUP_TEST[group]].message}
                 </div>
               )}
-              {group === 'Lyrics (OpenAI)' && preview && !preview.loading && (
+              {group === 'Lyrics' && preview && !preview.loading && (
                 preview.ok ? (
                   <motion.div className="ok-note" style={{ marginBottom: 14 }}
                     initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>

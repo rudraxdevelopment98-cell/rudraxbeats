@@ -29,6 +29,24 @@ async function openaiModels(c) {
   };
 }
 
+async function geminiTextModels(c) {
+  if (!c.geminiApiKey) return { ok: false, message: 'Add the Gemini key first.', models: [] };
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${c.geminiApiKey}`);
+  if (!r.ok) return { ok: false, message: `Gemini rejected the key (${r.status}).`, models: [] };
+  const data = await r.json();
+  const ids = (data.models || [])
+    .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+    .map((m) => String(m.name || '').replace(/^models\//, ''))
+    // image/audio/embedding variants can't write lyrics
+    .filter((n) => !/image|embedding|aqa|tts|audio|vision/i.test(n))
+    .sort();
+  return {
+    ok: ids.length > 0,
+    message: ids.length ? `${ids.length} text model(s) available on this key` : 'No text model on this key.',
+    models: ids.map((id) => ({ id, recommended: /2\.5-flash$|2\.0-flash$/.test(id) })),
+  };
+}
+
 async function geminiModels(c) {
   if (!c.geminiApiKey) return { ok: false, message: 'Add the Gemini key first.', models: [] };
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${c.geminiApiKey}`);
@@ -62,7 +80,7 @@ export default async function handler(req, res) {
   try {
     const c = await getConfig();
     const target = String(req.query.target || '');
-    const fn = { openai: openaiModels, gemini: geminiModels }[target];
+    const fn = { openai: openaiModels, gemini: geminiModels, 'gemini-text': geminiTextModels }[target];
     if (!fn) return res.status(400).json({ error: 'Unknown target' });
     return res.status(200).json(await fn(c));
   } catch (err) {

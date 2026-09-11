@@ -82,6 +82,8 @@ async function getConfig() {
     return dflt;
   };
   return {
+    lyricsProvider: pick('lyricsProvider', 'LYRICS_PROVIDER', 'gemini'),
+    geminiTextModel: pick('geminiTextModel', 'GEMINI_TEXT_MODEL'),
     openaiApiKey: pick('openaiApiKey', 'OPENAI_API_KEY'),
     openaiModel: pick('openaiModel', 'OPENAI_MODEL', 'gpt-4o-mini'),
     openaiBaseUrl: pick('openaiBaseUrl', 'OPENAI_BASE_URL', 'https://api.openai.com/v1'),

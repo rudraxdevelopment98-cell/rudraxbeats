@@ -109,24 +109,30 @@ export default function Pipeline() {
     }
   }, []);
 
-  const saveNode = async (n) => {
+  // Save an arbitrary patch and fold the fresh config back into state.
+  const savePatch = async (patch) => {
+    const r = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Save failed');
+    setFields(data.fields);
+    setReadiness(data.readiness || null);
+    return data;
+  };
+
+  const saveNode = async (n, keys) => {
     setSaving(true);
     try {
       const patch = {};
-      for (const key of n.fields) if (values[key] !== undefined) patch[key] = values[key];
-      const r = await fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || 'Save failed');
-      setFields(data.fields);
-      setReadiness(data.readiness || null);
+      for (const key of keys) if (values[key] !== undefined) patch[key] = values[key];
+      const data = await savePatch(patch);
       // blank the secret inputs again so the masked hint shows
       setValues((prev) => {
         const next = { ...prev };
-        for (const key of n.fields) if (data.fields[key]?.secret) next[key] = '';
+        for (const key of keys) if (data.fields[key]?.secret) next[key] = '';
         return next;
       });
       setSavedAt(Date.now());
@@ -140,7 +146,27 @@ export default function Pipeline() {
 
   if (!ready || !fields) return <Loader />;
 
-  const modelList = node.modelsTarget ? models[node.modelsTarget] : null;
+  // A stage can offer more than one provider (lyrics: free Gemini or paid
+  // OpenAI); everything it shows then depends on which one is picked.
+  const providerValue = node.providerField
+    ? values[node.providerField] || fields[node.providerField]?.value || node.providerOptions[0].value
+    : null;
+  const option = node.providerOptions?.find((o) => o.value === providerValue) || null;
+  const eff = {
+    fields: option?.fields || node.fields,
+    modelField: option?.modelField || node.modelField,
+    modelsTarget: option?.modelsTarget || node.modelsTarget,
+    howTo: option?.howTo || node.howTo,
+  };
+
+  // Switching provider is saved straight away, so the test below uses it.
+  const pickProvider = async (value) => {
+    setValues((v) => ({ ...v, [node.providerField]: value }));
+    try { await savePatch({ [node.providerField]: value }); } catch (_) {}
+    setTests((t) => ({ ...t, [node.id]: undefined }));
+  };
+
+  const modelList = eff.modelsTarget ? models[eff.modelsTarget] : null;
   const result = tests[node.id];
 
   return (
@@ -230,35 +256,56 @@ export default function Pipeline() {
               </AnimatePresence>
               {!result && <div className="hint" style={{ marginTop: 0 }}>Test does: {node.testDoes}</div>}
 
+              {/* provider chooser */}
+              {node.providerOptions && (
+                <div className="field">
+                  <label>Provider</label>
+                  <div className="choices">
+                    {node.providerOptions.map((o) => (
+                      <button
+                        key={o.value}
+                        className={`choice ${providerValue === o.value ? 'sel' : ''}`}
+                        onClick={() => pickProvider(o.value)}
+                      >
+                        <div className="t">{o.label}</div>
+                        <div className="b">{o.blurb}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* model picker */}
-              {node.modelsTarget && (
+              {eff.modelsTarget && (
                 <div className="field">
                   <label>
                     Model
-                    <span className="tag">{node.modelsTarget === 'openai' ? 'text' : 'image'}</span>
+                    <span className="tag">{eff.modelsTarget === 'gemini' ? 'image' : 'text'}</span>
                   </label>
                   <div className="row" style={{ gap: 8 }}>
                     <select
                       className="input"
-                      value={values[node.modelField] ?? ''}
-                      onChange={(e) => setValues({ ...values, [node.modelField]: e.target.value })}
+                      value={values[eff.modelField] ?? ''}
+                      onChange={(e) => setValues({ ...values, [eff.modelField]: e.target.value })}
                     >
                       <option value="">
-                        {node.modelsTarget === 'gemini' ? 'Auto — pick one that works (recommended)' : 'Default'}
+                        {String(eff.modelsTarget).startsWith('gemini')
+                          ? 'Auto — pick one that works (recommended)'
+                          : 'Default'}
                       </option>
                       {(modelList?.models || []).map((m) => (
                         <option key={m.id} value={m.id}>{m.id}{m.recommended ? '  ★ recommended' : ''}</option>
                       ))}
                       {/* keep a saved value visible even before the list is fetched */}
-                      {values[node.modelField] &&
-                        !(modelList?.models || []).some((m) => m.id === values[node.modelField]) && (
-                          <option value={values[node.modelField]}>{values[node.modelField]}</option>
+                      {values[eff.modelField] &&
+                        !(modelList?.models || []).some((m) => m.id === values[eff.modelField]) && (
+                          <option value={values[eff.modelField]}>{values[eff.modelField]}</option>
                         )}
                     </select>
                     <MotionButton
                       className="btn ghost"
                       style={{ padding: '10px 14px', fontSize: 13, whiteSpace: 'nowrap' }}
-                      onClick={() => loadModels(node.modelsTarget)}
+                      onClick={() => loadModels(eff.modelsTarget)}
                       disabled={modelList?.loading}
                     >
                       {modelList?.loading ? <span className="spin" /> : '↻ Load models'}
@@ -273,9 +320,9 @@ export default function Pipeline() {
               )}
 
               {/* the node's own settings */}
-              {node.fields.map((key) => {
+              {eff.fields.map((key) => {
                 const f = fields[key];
-                if (!f || key === node.modelField) return null;
+                if (!f || key === eff.modelField) return null;
                 return (
                   <div className="field" key={key}>
                     <label>
@@ -295,7 +342,7 @@ export default function Pipeline() {
               })}
 
               <div className="row" style={{ gap: 10 }}>
-                <MotionButton className="btn" onClick={() => saveNode(node)} disabled={saving}>
+                <MotionButton className="btn" onClick={() => saveNode(node, eff.fields)} disabled={saving}>
                   {saving ? <><span className="spin" /> Saving…</> : '💾 Save this stage'}
                 </MotionButton>
                 {node.connect && (
@@ -311,16 +358,16 @@ export default function Pipeline() {
               </div>
 
               {/* how to get the credential */}
-              {node.howTo && (
+              {eff.howTo && (
                 <details className="howto">
-                  <summary>❓ {node.howTo.title}</summary>
+                  <summary>❓ {eff.howTo.title}</summary>
                   <ol>
-                    {node.howTo.steps.map((s) => <li key={s}>{s}</li>)}
+                    {eff.howTo.steps.map((step) => <li key={step}>{step}</li>)}
                   </ol>
-                  <a href={node.howTo.link} target={node.howTo.link.startsWith('http') ? '_blank' : undefined} rel="noreferrer">
-                    {node.howTo.linkLabel} ↗
+                  <a href={eff.howTo.link} target={eff.howTo.link.startsWith('http') ? '_blank' : undefined} rel="noreferrer">
+                    {eff.howTo.linkLabel} ↗
                   </a>
-                  {node.howTo.note && <div className="hint">{node.howTo.note}</div>}
+                  {eff.howTo.note && <div className="hint">{eff.howTo.note}</div>}
                 </details>
               )}
             </Card>

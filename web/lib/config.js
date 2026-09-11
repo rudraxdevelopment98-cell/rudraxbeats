@@ -10,16 +10,20 @@
 // returns only { set, hint } for them.
 
 import { kvConfigured, kvStore, getWorkerHeartbeat, getWorkerAlert } from './db.js';
+import { lyricsReady } from './llmChat.js';
 import { DEFAULT_GOOGLE_CLIENT_ID } from './googleClient.js';
 
 const CONFIG_KEY = 'config';
 
 // Canonical field schema. `env` is the fallback environment variable name.
 export const FIELDS = {
-  // Lyrics (OpenAI)
-  openaiApiKey: { env: 'OPENAI_API_KEY', secret: true, label: 'OpenAI API Key', group: 'Lyrics (OpenAI)' },
-  openaiModel: { env: 'OPENAI_MODEL', default: 'gpt-4o-mini', label: 'OpenAI Model', group: 'Lyrics (OpenAI)' },
-  openaiBaseUrl: { env: 'OPENAI_BASE_URL', default: 'https://api.openai.com/v1', label: 'OpenAI Base URL', group: 'Lyrics (OpenAI)' },
+  // Lyrics. Default provider is Gemini: its free tier writes lyrics at no cost
+  // and reuses the key the cover art already needs.
+  lyricsProvider: { env: 'LYRICS_PROVIDER', default: 'gemini', label: 'Provider: gemini (free) or openai', group: 'Lyrics' },
+  geminiTextModel: { env: 'GEMINI_TEXT_MODEL', default: '', label: 'Gemini text model (blank = pick one that works)', group: 'Lyrics' },
+  openaiApiKey: { env: 'OPENAI_API_KEY', secret: true, label: 'OpenAI API Key (or Groq / OpenRouter key)', group: 'Lyrics' },
+  openaiModel: { env: 'OPENAI_MODEL', default: 'gpt-4o-mini', label: 'OpenAI Model', group: 'Lyrics' },
+  openaiBaseUrl: { env: 'OPENAI_BASE_URL', default: 'https://api.openai.com/v1', label: 'OpenAI Base URL (change for Groq / OpenRouter)', group: 'Lyrics' },
 
   // Song (Suno). Default mode = self-hosted gcui-art/suno-api (your Pro cookie).
   sunoBaseUrl: { env: 'SUNO_PROVIDER_BASE_URL', label: 'Suno wrapper URL (your deployed suno-api)', group: 'Song (Suno)' },
@@ -189,7 +193,7 @@ export async function getReadiness() {
     workerInfo: hb.info,
     autopilot: hb.info?.autopilot || null,
     alert,
-    lyrics: Boolean(c.openaiApiKey),
+    lyrics: lyricsReady(c),
     // self-host (suno-api) needs only the wrapper URL; generic mode needs a key too
     song: Boolean(c.sunoBaseUrl) && (c.sunoMode === 'suno-api' ? true : Boolean(c.sunoApiKey)),
     thumbnail: Boolean(c.geminiApiKey),

@@ -13,7 +13,7 @@ with live progress in a dashboard.
                                  ▼
                     ALWAYS-ON WORKER  (your PC / Railway / Render)
                                  │
-   ①  lyrics      OpenAI ─────── writes a song about your playlist's subject
+   ①  lyrics      Gemini free ── writes a song about your playlist's subject
    ②  song        Suno wrapper ─ your own Suno Pro account
    ③  cover art   Gemini image
    ④  video       Gemini + ffmpeg  AI scene shots, Ken-Burns + cross-fades
@@ -49,8 +49,10 @@ queue; the always-on worker does all the long work. This is what makes
   third-party wrapper is supported too (`Mode = generic`).
 - **ChatGPT-free and Google Flow (Veo) free have no API.** Automating them means
   browser-botting logins across accounts — against their terms and constantly
-  breaking. Lyrics therefore use the (very cheap) OpenAI API, and the video is
-  rendered locally with ffmpeg, which costs nothing.
+  breaking. Lyrics instead go through a real API: **Gemini's free tier by
+  default** (the same key the cover art uses, so nothing extra to sign up for),
+  or OpenAI / Groq / OpenRouter if you prefer. The video is rendered locally
+  with ffmpeg, which costs nothing.
 - **A website can't write to your computer, but the worker can.** The worker app
   runs *on* your PC, so it copies every finished song into the folder you choose
   in Settings. (Drive is still used as the cloud copy, with retention.)
@@ -208,6 +210,9 @@ follow the new theme.
 YouTube → Storage** — and each node carries everything that stage needs:
 
 - **what it does**, in one line;
+- for Lyrics, a **provider switch**: Gemini's free tier (default) or OpenAI —
+  and since the OpenAI side is just an OpenAI-compatible endpoint, pointing the
+  base URL at Groq or OpenRouter works too;
 - a **model picker** filled from *your own key* (`/api/models` asks OpenAI or
   Google what that key may actually call, so a retired model id can't linger in
   a hardcoded list) with the cheap sensible choice marked ★;
@@ -217,7 +222,7 @@ YouTube → Storage** — and each node carries everything that stage needs:
 
 | Node | What its test actually does |
 | --- | --- |
-| Lyrics | Writes two real lines in your song language and shows them |
+| Lyrics | Writes two real lines in your song language and shows them, on the provider you picked |
 | Song | Asks your suno-api for the session limit → proves the cookie is alive, shows credits left (and how many songs that is) |
 | Cover art | Generates a real image and displays it |
 | Video | Reports the worker's ffmpeg, fonts, clip count and current mode |

@@ -3,6 +3,8 @@
 // Mirrors web/lib/{lyrics,song,thumbnail}.js but runs in the always-on worker
 // where multi-minute polling is fine.
 
+const { chat } = require('./llm');
+
 const THEMES = [
   'late-night city drive', 'first snow of winter', 'chasing a distant dream',
   'reconnecting with an old friend', 'the calm after a storm', 'summer road trip',
@@ -68,8 +70,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------- lyrics ---
 async function generateLyrics(cfg) {
-  if (!cfg.openaiApiKey) throw new Error('OpenAI API key is not set (Settings → Lyrics)');
-
   const language = cfg.songLanguage || 'English';
   const nonLatin = isNonLatin(language);
   const genre = pick(nonLatin ? GENRES_GU : GENRES);
@@ -103,48 +103,27 @@ async function generateLyrics(cfg) {
         '  "style_tags": comma-separated production tags, "mood": one or two words }',
       ].join('\n');
 
-  const res = await fetch(`${cfg.openaiBaseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.openaiApiKey}` },
-    body: JSON.stringify({
-      model: cfg.openaiModel,
-      temperature: 0.9,
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content:
-            `You are a professional ${language} songwriter and music producer. You write ` +
-            'original, singable lyrics that feel natural to native speakers and produce ' +
-            'clean JSON. Never include copyrighted lyrics or reference real artists/songs.',
-        },
-        {
-          role: 'user',
-          content: [
-            `Write an original ${genre} song sung in ${language} about "${theme}".`,
-            topic ? `The song MUST clearly belong to the theme/category: "${topic}".` : '',
-            nonLatin
-              ? `Write natural, idiomatic ${language} as a native speaker would sing it — ` +
-                'not a word-for-word translation of English. Use everyday vocabulary.'
-              : '',
-            'Structure it with sections like [Verse 1], [Chorus], [Verse 2], [Bridge], [Outro].',
-            'Keep it under ~2:30 of singing.',
-            `The style_tags MUST include "${language}" and the genre so the music model sings in the right language.`,
-            '',
-            jsonSpec,
-          ].filter(Boolean).join('\n'),
-        },
-      ],
-    }),
-  });
+  const system =
+    `You are a professional ${language} songwriter and music producer. You write ` +
+    'original, singable lyrics that feel natural to native speakers and produce ' +
+    'clean JSON. Never include copyrighted lyrics or reference real artists/songs.';
 
-  if (!res.ok) {
-    const b = await res.text().catch(() => '');
-    throw new Error(`OpenAI lyrics failed (${res.status}): ${b.slice(0, 300)}`);
-  }
-  const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error('OpenAI returned no lyrics content');
+  const user = [
+    `Write an original ${genre} song sung in ${language} about "${theme}".`,
+    topic ? `The song MUST clearly belong to the theme/category: "${topic}".` : '',
+    nonLatin
+      ? `Write natural, idiomatic ${language} as a native speaker would sing it \u2014 ` +
+        'not a word-for-word translation of English. Use everyday vocabulary.'
+      : '',
+    'Structure it with sections like [Verse 1], [Chorus], [Verse 2], [Bridge], [Outro].',
+    'Keep it under ~2:30 of singing.',
+    `The style_tags MUST include "${language}" and the genre so the music model sings in the right language.`,
+    '',
+    jsonSpec,
+  ].filter(Boolean).join('\n');
+
+  // Provider-agnostic: OpenAI, or Gemini's free tier (see llm/llmChat).
+  const { text: content } = await chat(cfg, { system, user, json: true });
   let parsed;
   try {
     parsed = JSON.parse(content);

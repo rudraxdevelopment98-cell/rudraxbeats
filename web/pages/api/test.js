@@ -13,48 +13,40 @@ import { requireAuth } from '../../lib/auth.js';
 import { getConfig } from '../../lib/config.js';
 import { getWorkerHeartbeat } from '../../lib/db.js';
 import { generateImage } from '../../lib/geminiImage.js';
+import { chat, lyricsProvider } from '../../lib/llmChat.js';
 
 // ---------------------------------------------------------------- lyrics ---
 async function testLyrics(c) {
-  if (!c.openaiApiKey) return { ok: false, message: 'No OpenAI key set.' };
+  const provider = lyricsProvider(c);
   const language = c.songLanguage || 'English';
-  const base = (c.openaiBaseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
-  const model = c.openaiModel || 'gpt-4o-mini';
+  const nonLatin = /^(gujarati|hindi|marathi|bengali|punjabi|tamil|telugu|kannada|malayalam|odia|urdu|nepali)$/i.test(language);
 
-  const r = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.openaiApiKey}` },
-    body: JSON.stringify({
-      model,
-      temperature: 0.8,
-      max_tokens: 160,
-      messages: [
-        { role: 'system', content: `You are a ${language} songwriter. Reply with the lines only.` },
-        {
-          role: 'user',
-          content:
-            `Write two original lines of a ${language} song about ${c.playlistTopic || 'a village evening'}. ` +
-            (/^(gujarati|hindi|marathi|bengali|punjabi|tamil|telugu|kannada|malayalam|odia|urdu|nepali)$/i.test(language)
-              ? 'Write them in the native script, then the same two lines romanized on the next line.'
-              : ''),
-        },
-      ],
-    }),
-  });
-  if (!r.ok) {
-    const b = await r.text().catch(() => '');
-    const hint = r.status === 429 ? ' Add credit to the OpenAI account — a new key has no quota.' : '';
-    return { ok: false, message: `OpenAI refused (${r.status}).${hint}`, detail: b.slice(0, 300) };
+  try {
+    const { text, model, usage } = await chat(c, {
+      system: `You are a ${language} songwriter. Reply with the lines only.`,
+      user:
+        `Write two original lines of a ${language} song about ${c.playlistTopic || 'a village evening'}. ` +
+        (nonLatin ? 'Write them in the native script, then the same two lines romanized on the next line.' : ''),
+      maxTokens: 200,
+    });
+    return {
+      ok: true,
+      message: `${model} wrote real ${language} lines ✓`,
+      detail: `Provider: ${provider}${usage ? ` · tokens used: ${usage}` : ''}`,
+      sample: text,
+    };
+  } catch (e) {
+    const msg = e.message || String(e);
+    let hint = '';
+    if (/429|quota|credit_balance_exhausted|RESOURCE_EXHAUSTED/i.test(msg)) {
+      hint = provider === 'openai'
+        ? ' This OpenAI account has no credit left. Switch the provider to Gemini (free) on this page, or add credit.'
+        : ' The Gemini free tier is used up for now — it resets on its own; try again later.';
+    } else if (/API key not valid|401|invalid_api_key/i.test(msg)) {
+      hint = ' Check the key was copied whole.';
+    }
+    return { ok: false, message: `${provider === 'openai' ? 'OpenAI' : 'Gemini'} could not write lyrics.${hint}`, detail: msg.slice(0, 300) };
   }
-  const data = await r.json();
-  const sample = data?.choices?.[0]?.message?.content?.trim();
-  if (!sample) return { ok: false, message: 'OpenAI answered but wrote nothing.' };
-  return {
-    ok: true,
-    message: `${model} wrote real ${language} lines ✓`,
-    detail: `Tokens used: ${data.usage?.total_tokens ?? '?'}`,
-    sample,
-  };
 }
 
 // ------------------------------------------------------------------ song ---
