@@ -27,7 +27,7 @@ async function testLyrics(c) {
       user:
         `Write two original lines of a ${language} song about ${c.playlistTopic || 'a village evening'}. ` +
         (nonLatin ? 'Write them in the native script, then the same two lines romanized on the next line.' : ''),
-      maxTokens: 600,
+      maxTokens: 2048,
       // Hard caps: one stalled call must not eat the function's whole budget.
       timeoutMs: 9000,
       deadlineMs: 15000,
@@ -47,6 +47,8 @@ async function testLyrics(c) {
       hint = provider === 'openai'
         ? ' This OpenAI account has no credit left. Switch the provider to Gemini (free) on this page, or add credit.'
         : ' The Gemini free tier is used up for now — it resets on its own; try again later.';
+    } else if (/ran out of output room/i.test(msg)) {
+      hint = ' The model spent its whole budget thinking. Pick gemini-2.0-flash in the model list above — it does not think before answering.';
     } else if (/API key not valid|401|invalid_api_key/i.test(msg)) {
       hint = ' Check the key was copied whole.';
     }

@@ -13,12 +13,16 @@ const GEMINI_ROOT = process.env.GEMINI_API_ROOT || 'https://generativelanguage.g
 
 // Model ids move around; try the current ones and keep whichever answers.
 export const GEMINI_TEXT_MODELS = [
+  // 2.0 first on purpose: it has no "thinking" phase at all, so the whole
+  // output budget goes to the song. The 2.5 models think first and can burn
+  // the budget before writing a word, which is exactly how a run ends up
+  // truncated.
+  'gemini-2.0-flash',
   'gemini-2.5-flash',
   'gemini-flash-latest',
-  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
   'gemini-2.5-flash-lite',
   'gemini-flash-lite-latest',
-  'gemini-2.0-flash-lite',
 ];
 
 // This model id is wrong/retired - another one may work.
@@ -31,6 +35,10 @@ const isBusy = (msg) =>
   /\b(429|500|502|503|504)\b|UNAVAILABLE|INTERNAL|overloaded|high demand|RESOURCE_EXHAUSTED|no answer within/i.test(
     String(msg)
   );
+
+// The answer was cut off mid-sentence - the model needs more room, not a
+// different model.
+const isOutOfRoom = (msg) => /ran out of output room/i.test(String(msg));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -123,16 +131,23 @@ export async function chat(cfg, req) {
 
     let lastErr = null;
     for (const model of candidates) {
-      // Two goes at each model: a busy model is usually fine a second later.
-      for (let attempt = 0; attempt < 2; attempt++) {
+      // A model that thinks before answering can spend the whole budget on
+      // reasoning; when that happens, give it markedly more room rather than
+      // handing back half a song.
+      let budget = req.maxTokens || 4096;
+      for (let attempt = 0; attempt < 3; attempt++) {
         if (outOfTime() && lastErr) throw lastErr;
         try {
-          return await geminiOnce(cfg, model, attemptReq());
+          return await geminiOnce(cfg, model, { ...attemptReq(), maxTokens: budget });
         } catch (e) {
           lastErr = e;
+          if (isOutOfRoom(e.message) && budget < 8192) {
+            budget = Math.min(8192, budget * 3);
+            continue;                     // same model, bigger budget
+          }
           const busy = isBusy(e.message);
-          // A bad key, a blocked prompt or an answer that ran out of room
-          // won't be fixed by waiting or by another model.
+          // A bad key or a blocked prompt won't be fixed by waiting, by more
+          // room, or by another model.
           if (!busy && !isModelProblem(e.message)) throw e;
           if (!busy) break;               // wrong model id - go to the next one
           if (outOfTime()) throw lastErr;
