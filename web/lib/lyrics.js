@@ -75,7 +75,11 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)];
 export async function generateLyrics(cfg, limits = {}) {
   const language = cfg.songLanguage || 'English';
   const nonLatin = isNonLatin(language);
-  const genre = pick(nonLatin ? GENRES_GU : GENRES);
+  // A chosen genre wins; blank keeps the daily variety that stops the channel
+  // looking mass-produced.
+  const genre = String(cfg.songGenre || '').trim() || pick(nonLatin ? GENRES_GU : GENRES);
+  const vocal = String(cfg.songVocal || '').trim();
+  const moodWanted = String(cfg.songMood || '').trim();
 
   // If a playlist subject/category is configured, every song is written about
   // that subject (with an angle picked per run so tracks aren't near-duplicates).
@@ -118,6 +122,8 @@ export async function generateLyrics(cfg, limits = {}) {
       ? `Write natural, idiomatic ${language} as a native speaker would sing it \u2014 ` +
         'not a word-for-word translation of English. Use everyday vocabulary.'
       : '',
+    vocal ? `Written for a ${vocal} voice.` : '',
+    moodWanted ? `The mood must be ${moodWanted}.` : '',
     'Structure it with sections like [Verse 1], [Chorus], [Verse 2], [Bridge], [Outro].',
     'Keep it under ~2:30 of singing.',
     `The style_tags MUST include "${language}" and the genre so the music model sings in the right language.`,
@@ -148,6 +154,14 @@ export async function generateLyrics(cfg, limits = {}) {
   let style = String(parsed.style_tags || genre);
   if (!style.toLowerCase().includes(String(language).toLowerCase())) {
     style = `${language}, ${style}`; // make the vocal language explicit for Suno
+  }
+  // The chosen genre and voice are instructions to the music model too, not
+  // just to the lyricist.
+  if (cfg.songGenre && !style.toLowerCase().includes(String(cfg.songGenre).toLowerCase())) {
+    style = `${style}, ${cfg.songGenre}`;
+  }
+  if (vocal && !style.toLowerCase().includes(vocal.toLowerCase())) {
+    style = `${style}, ${vocal} vocal`;
   }
 
   return {

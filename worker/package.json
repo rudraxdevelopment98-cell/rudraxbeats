@@ -7,7 +7,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node launcher.js",
-    "start:raw": "node server.js"
+    "start:raw": "node server.js",
+    "demo": "node scripts/offline-demo.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

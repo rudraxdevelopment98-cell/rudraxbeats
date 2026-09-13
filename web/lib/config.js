@@ -51,6 +51,9 @@ export const FIELDS = {
   ytPlaylistId: { env: 'YT_PLAYLIST_ID', label: 'Playlist ID or URL (uploads get added here)', group: 'Playlist & content' },
   playlistTopic: { env: 'PLAYLIST_TOPIC', default: '', label: 'Playlist subject / category (songs are written about this)', group: 'Playlist & content' },
   songLanguage: { env: 'SONG_LANGUAGE', default: 'Gujarati', label: 'Song language', group: 'Playlist & content' },
+  songGenre: { env: 'SONG_GENRE', default: '', label: 'Genre / style (blank = a different one each day)', group: 'Playlist & content' },
+  songVocal: { env: 'SONG_VOCAL', default: '', label: 'Voice: female / male / duet / chorus (blank = varies)', group: 'Playlist & content' },
+  songMood: { env: 'SONG_MOOD', default: '', label: 'Mood: energetic / romantic / devotional / sad (blank = varies)', group: 'Playlist & content' },
 
   // Autopilot (hands-free operation)
   timezone: { env: 'TIMEZONE', default: 'Asia/Kolkata', label: 'Your timezone (the daily time is read in this zone)', group: 'Autopilot' },

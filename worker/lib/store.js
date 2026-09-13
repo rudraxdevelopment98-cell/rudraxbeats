@@ -107,6 +107,9 @@ async function getConfig() {
     ytPlaylistId: parsePlaylistId(pick('ytPlaylistId', 'YT_PLAYLIST_ID')),
     playlistTopic: pick('playlistTopic', 'PLAYLIST_TOPIC'),
     songLanguage: pick('songLanguage', 'SONG_LANGUAGE', 'Gujarati'),
+    songGenre: pick('songGenre', 'SONG_GENRE'),
+    songVocal: pick('songVocal', 'SONG_VOCAL'),
+    songMood: pick('songMood', 'SONG_MOOD'),
 
     videoMode: pick('videoMode', 'VIDEO_MODE', 'auto'),
     clipsPerSong: parseInt(pick('clipsPerSong', 'CLIPS_PER_SONG', '3'), 10) || 3,

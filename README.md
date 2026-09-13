@@ -121,6 +121,23 @@ cheap HTTP ping to the worker's `/health`. A cold start takes ~30–60 s, then t
 job is picked up normally. For the daily cron, the uptime pinger is the reliable
 fix.
 
+#### Run the worker in the cloud (free, nothing to install)
+
+The repo ships a `render.yaml`, so the worker can run on Render's free tier
+instead of a PC — no desktop app, no GitHub Actions build:
+
+1. [render.com](https://render.com) → **New → Blueprint** → connect this repo.
+2. It reads `render.yaml` and offers **ai-song-engine-worker**; the only value
+   to fill in is **REDIS_URL** (Dashboard → Settings → Worker app → Copy).
+3. **Apply**. When the log says `waiting for jobs…`, the dashboard's Video node
+   turns green.
+4. Free services sleep after ~15 min idle. The dashboard pings `/health` when
+   it queues a song, and a free pinger (uptimerobot.com) on
+   `https://<your-service>.onrender.com/health` every 10 min keeps it awake.
+
+Poster mode barely uses the free tier (a song renders in seconds). Switch to a
+PC worker later if you want AI-scene videos, which are heavier.
+
 #### Run the worker on your own PC (free, recommended)
 
 A spare/always-on PC is the best host: no sleeping, no quotas, and rendering is

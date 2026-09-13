@@ -15,7 +15,7 @@ export const NODES = [
     icon: '✍️',
     title: 'Lyrics',
     provider: 'Gemini (free) or OpenAI',
-    does: 'Writes the title, the lyrics (native script + romanized) and the style tags for every song, on your playlist subject.',
+    does: 'Writes the title, the lyrics (native script + romanized) and the style tags for every song — in your language, genre, voice and mood.',
     // This stage can run on two different providers, so its fields, model list
     // and instructions all depend on which one is selected.
     providerField: 'lyricsProvider',
@@ -140,7 +140,7 @@ export const NODES = [
     title: 'YouTube',
     provider: 'YouTube Data API',
     does: 'Uploads the video, sets the thumbnail, title, description and tags, and adds it to your playlist.',
-    fields: ['ytPrivacyStatus', 'ytPlaylistId', 'playlistTopic', 'songLanguage'],
+    fields: ['ytPrivacyStatus', 'ytPlaylistId', 'playlistTopic', 'songLanguage', 'songGenre', 'songVocal', 'songMood'],
     test: 'upload',
     testDoes: 'Asks YouTube which channel this login controls, and checks the playlist id really exists.',
     connect: { label: 'Connect YouTube channel', href: '/settings' },

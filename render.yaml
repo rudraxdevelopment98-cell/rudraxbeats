@@ -1,0 +1,30 @@
+# render.yaml — one-click cloud worker.
+#
+# Why this exists: the worker is the part that actually makes the songs, and
+# until now it meant installing an app on a PC and leaving it running. This
+# runs the same worker on Render's free tier instead, straight from this repo,
+# with nothing to build or download.
+#
+# Deploy: render.com → New → Blueprint → pick this repo → set REDIS_URL.
+#
+# Free-tier note: the service sleeps after ~15 minutes idle. The dashboard
+# pings /health when it queues a song, which wakes it; add a free uptime
+# pinger (uptimerobot.com, cron-job.org) on <your-url>/health every 10 minutes
+# so it is already awake when the daily run fires.
+services:
+  - type: web
+    name: ai-song-engine-worker
+    runtime: docker
+    plan: free
+    region: oregon
+    rootDir: worker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # The only thing you must fill in: the same Redis the dashboard uses.
+      # Dashboard → Settings → "Worker app" card has a Copy button for it.
+      - key: REDIS_URL
+        sync: false
+      - key: PORT
+        value: 3001
