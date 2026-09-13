@@ -112,6 +112,7 @@ async function getConfig() {
     songMood: pick('songMood', 'SONG_MOOD'),
 
     videoMode: pick('videoMode', 'VIDEO_MODE', 'auto'),
+    lyricsOnVideo: pick('lyricsOnVideo', 'LYRICS_ON_VIDEO', 'on'),
     clipsPerSong: parseInt(pick('clipsPerSong', 'CLIPS_PER_SONG', '3'), 10) || 3,
     sceneCount: parseInt(pick('sceneCount', 'SCENE_COUNT', '4'), 10) || 4,
     sceneSeconds: parseInt(pick('sceneSeconds', 'SCENE_SECONDS', '8'), 10) || 8,

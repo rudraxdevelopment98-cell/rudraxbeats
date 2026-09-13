@@ -98,10 +98,20 @@ async function startStubs(coverPng) {
     '-frames:v', '1', imageFile,
   ]);
 
-  // a stand-in song: 45s of a simple tune, in place of Suno
+  // a stand-in song: a simple two-note loop with a beat, in place of Suno.
+  // Nothing musical is being claimed here - it just gives the video something
+  // to run against so the timing of the lyric cards is real.
   await run([
-    '-y', '-f', 'lavfi', '-i',
-    'sine=frequency=294:duration=45,volume=0.2', '-c:a', 'libmp3lame', audioFile,
+    '-y',
+    '-f', 'lavfi', '-i', 'sine=frequency=196:duration=45',
+    '-f', 'lavfi', '-i', 'sine=frequency=294:duration=45',
+    '-f', 'lavfi', '-i', 'sine=frequency=60:duration=45',
+    '-filter_complex',
+      '[0:a]tremolo=f=2:d=0.8,volume=0.16[a0];' +
+      '[1:a]tremolo=f=4:d=0.9,volume=0.10[a1];' +
+      '[2:a]tremolo=f=2:d=1,volume=0.25[a2];' +
+      '[a0][a1][a2]amix=inputs=3:normalize=0,alimiter=limit=0.9[a]',
+    '-map', '[a]', '-c:a', 'libmp3lame', audioFile,
   ]);
 
   const srv = await startStubs(imageFile);
@@ -127,13 +137,15 @@ async function startStubs(coverPng) {
 
     console.log('\n  3. video (poster mode: the cover held over the song)');
     const t0 = Date.now();
-    await renderPosterVideo({
+    const r = await renderPosterVideo({
       audioFile, imageFile, titleFile: path.join(work, 'title.txt'), outFile,
       title: song.title, titleRoman: song.titleRoman,
+      lyrics: song.lyrics, lyricsRoman: song.lyricsRoman, workDir: work,
     });
     const secs = await probeDuration(outFile);
     console.log(`     ${outFile}`);
     console.log(`     ${(fs.statSync(outFile).size / 1e6).toFixed(2)} MB · ${secs}s · rendered in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    console.log(`     lyrics on screen: ${r.lyricCards} card(s)${HAS_DRAWTEXT ? '' : ' (this ffmpeg cannot draw text)'}`);
 
     console.log('\n  Ready to upload. In a real run this file goes to YouTube with the');
     console.log('  cover as its thumbnail, the lyrics in the description, and into your playlist.\n');

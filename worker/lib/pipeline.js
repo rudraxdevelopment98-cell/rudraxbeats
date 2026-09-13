@@ -148,13 +148,18 @@ async function runJob(jobId) {
 
     let usedClips = 0;
     let usedScenes = 0;
+    let posterCards = 0;
     try {
       if (posterOnly) {
         await progress('video', 20, 'Placing the cover over the song…');
-        await renderPosterVideo({
+        const r = await renderPosterVideo({
           audioFile, imageFile, titleFile, outFile,
           title: song.title, titleRoman: song.titleRoman,
+          lyrics: song.lyrics, lyricsRoman: song.lyricsRoman,
+          showLyrics: cfg.lyricsOnVideo !== 'off',
+          workDir: work,
         });
+        posterCards = r.lyricCards;
       } else if (picked.length) {
         await progress('video', 10, `Building video from ${picked.length} clip(s)…`);
         const r = await renderVideoFromClips({
@@ -218,7 +223,7 @@ async function runJob(jobId) {
     });
     await progress(
       'video', 100,
-      posterOnly ? 'Cover + audio ready'
+      posterOnly ? (posterCards ? `Lyric video ready (${posterCards} lyric cards)` : 'Cover + audio ready')
         : usedClips ? `Video built from ${usedClips} clip(s)`
           : usedScenes ? `Video built from ${usedScenes} AI scenes`
             : 'Video rendered'

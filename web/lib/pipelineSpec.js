@@ -119,7 +119,7 @@ export const NODES = [
     title: 'Video',
     provider: 'Worker + ffmpeg (your PC)',
     does: 'Builds the file YouTube actually accepts: the poster over the audio, an AI-scene montage, or your own clips.',
-    fields: ['videoMode', 'sceneCount', 'sceneSeconds', 'clipsPerSong'],
+    fields: ['videoMode', 'lyricsOnVideo', 'sceneCount', 'sceneSeconds', 'clipsPerSong'],
     test: 'video',
     testDoes: 'Checks the worker is connected and reports its ffmpeg, fonts and how many clips are waiting.',
     howTo: {

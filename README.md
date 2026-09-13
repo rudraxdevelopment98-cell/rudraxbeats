@@ -284,11 +284,16 @@ zoom out, pan back) and cross-fades them under the song.
 
 | Mode (Settings → 🎬 Video source) | What happens |
 | --- | --- |
-| `poster` | **No video making at all** — the cover art is held over the song. Renders in seconds. |
+| `poster` | **No video making at all** — the cover art is held over the song, with the **lyrics appearing line by line** in time with it. Renders in seconds. |
 | `auto` *(default)* | Clips when the folder has some → otherwise **AI scenes** → otherwise the cover image. |
 | `scenes` | Always the AI scene video (no clips needed, nothing to do by hand). |
 | `clips` | Prefer clips; falls back to AI scenes, then the cover image. |
 | `thumbnail` | Always the generated cover image + waveform (cheapest, fastest). |
+
+Poster mode writes the lyrics onto the video as timed cards (two to four lines
+at a time, section markers like `[Chorus]` left out) using the song's native
+script where a font for it exists and the romanized lines otherwise. Turn it
+off with **Show the lyrics on the poster video** if you want a bare cover.
 
 **Poster mode** has its own toggle on the dashboard, next to the daily schedule,
 because it is the one setting worth flipping day to day: switch it on to start

@@ -192,6 +192,45 @@ async function renderVideo({ audioFile, imageFile, titleFile, outFile, title, ti
 }
 
 
+
+/**
+ * Turn a set of lyrics into timed on-screen cards.
+ *
+ * Section markers ([Chorus] and friends) are stage directions, not something
+ * to sing, so they never appear. Lines are grouped so each card stays on
+ * screen long enough to read - roughly 3 seconds or more.
+ *
+ * @returns {{text:string}[]} cards in order
+ */
+function lyricCards(lyrics, durationSec) {
+  const lines = String(lyrics || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !/^\[.*\]$/.test(l));
+  if (!lines.length) return [];
+
+  const chunk = (n) => {
+    const out = [];
+    for (let i = 0; i < lines.length; i += n) out.push(lines.slice(i, i + n).join('\n'));
+    return out;
+  };
+  for (const size of [2, 3, 4]) {
+    const cards = chunk(size);
+    if (durationSec / cards.length >= 3 || size === 4) return cards.map((text) => ({ text }));
+  }
+  return chunk(4).map((text) => ({ text }));
+}
+
+/** Which script can actually be drawn with the fonts on this machine. */
+function pickLyricText(lyrics, lyricsRoman) {
+  const native = String(lyrics || '');
+  if (INDIC.test(native)) {
+    if (FONT_PATH_INDIC) return { text: native, font: FONT_PATH_INDIC };
+    return { text: String(lyricsRoman || ''), font: FONT_PATH }; // romanized instead of tofu
+  }
+  return { text: native, font: FONT_PATH };
+}
+
 /**
  * Audio + poster: one still cover image held for the whole song, no motion and
  * no waveform. YouTube has no audio-only upload, so this is what "just release
@@ -204,41 +243,78 @@ async function renderVideo({ audioFile, imageFile, titleFile, outFile, title, ti
  *
  * @returns {Promise<{durationSec:number}>}
  */
-async function renderPosterVideo({ audioFile, imageFile, titleFile, outFile, title, titleRoman, fps = 5 }) {
+async function renderPosterVideo({
+  audioFile, imageFile, titleFile, outFile, title, titleRoman,
+  lyrics, lyricsRoman, showLyrics = true, workDir, fps = 5,
+}) {
   const dur = (await probeDuration(audioFile)) || 150;
+  const dir = workDir || pathMod.dirname(outFile);
   const chosen = chooseTitle(title, titleRoman);
   const drawOverlay = HAS_DRAWTEXT && titleFile && chosen.text;
   if (drawOverlay) fsSync.writeFileSync(titleFile, sanitize(chosen.text));
 
   // Build the poster frame ONCE. Filtering inside the encode would redo this
   // work for every frame of a picture that never changes.
-  const poster = pathMod.join(pathMod.dirname(outFile), 'poster.png');
+  const poster = pathMod.join(dir, 'poster.png');
   await run([
     '-y', '-i', imageFile,
-    '-vf',
-    `scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1` +
-      (drawOverlay
-        ? `,drawtext=fontfile='${chosen.font}':textfile='${titleFile}':fontcolor=white:` +
-          `fontsize=64:box=1:boxcolor=black@0.45:boxborderw=24:x=(w-text_w)/2:y=h-text_h-90`
-        : ''),
+    '-vf', `scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1`,
     '-frames:v', '1', poster,
   ]);
 
-  await run([
+  // The title sits at the top for the whole song; the lyrics appear in time
+  // with it underneath, which is what makes this a lyric video rather than a
+  // still picture.
+  const filters = [];
+  if (drawOverlay) {
+    filters.push(
+      `drawtext=fontfile='${chosen.font}':textfile='${titleFile}':fontcolor=white:` +
+        `fontsize=62:box=1:boxcolor=black@0.45:boxborderw=22:x=(w-text_w)/2:y=70`
+    );
+  }
+
+  let cardCount = 0;
+  if (HAS_DRAWTEXT && showLyrics) {
+    const picked = pickLyricText(lyrics, lyricsRoman);
+    const cards = lyricCards(picked.text, dur);
+    cardCount = cards.length;
+    const per = cards.length ? dur / cards.length : 0;
+    cards.forEach((card, i) => {
+      const file = pathMod.join(dir, `lyric-${i}.txt`);
+      fsSync.writeFileSync(file, card.text);
+      const from = (i * per).toFixed(2);
+      const to = ((i + 1) * per).toFixed(2);
+      filters.push(
+        `drawtext=fontfile='${picked.font}':textfile='${file}':fontcolor=white:` +
+          `fontsize=52:line_spacing=14:box=1:boxcolor=black@0.55:boxborderw=26:` +
+          `x=(w-text_w)/2:y=h-text_h-110:enable='between(t,${from},${to})'`
+      );
+    });
+  }
+
+  const args = [
     '-y',
     '-loop', '1', '-framerate', String(fps), '-i', poster,
     '-i', audioFile,
-    '-map', '0:v', '-map', '1:a',
+  ];
+  if (filters.length) {
+    args.push('-filter_complex', `[0:v]${filters.join(',')}[v]`, '-map', '[v]');
+  } else {
+    args.push('-map', '0:v');
+  }
+  args.push(
+    '-map', '1:a',
     '-c:v', 'libx264', '-tune', 'stillimage', '-preset', 'veryfast', '-crf', '23',
     '-r', String(fps), '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '192k',
     // -t as well as -shortest: at a low frame rate the muxer can otherwise
     // overshoot the audio by a whole group of frames.
     '-t', dur.toFixed(2), '-shortest', '-movflags', '+faststart',
-    outFile,
-  ]);
+    outFile
+  );
+  await run(args);
 
-  return { durationSec: dur };
+  return { durationSec: dur, lyricCards: cardCount };
 }
 
 /**
@@ -469,6 +545,7 @@ async function makeFallbackImage(outFile) {
 module.exports = {
   renderVideo,
   renderPosterVideo,
+  lyricCards,
   renderVideoFromClips,
   renderVideoFromScenes,
   makeKenBurnsClip,

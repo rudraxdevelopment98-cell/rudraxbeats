@@ -63,6 +63,7 @@ export const FIELDS = {
   // Video source
   videoMode: { env: 'VIDEO_MODE', default: 'auto', label: 'Mode: poster (cover + audio, fastest) / auto (clips → AI scenes → cover) / scenes / clips / thumbnail', group: 'Video source' },
   clipsPerSong: { env: 'CLIPS_PER_SONG', default: '3', label: 'Clips to use per song (clips mode)', group: 'Video source' },
+  lyricsOnVideo: { env: 'LYRICS_ON_VIDEO', default: 'on', label: 'Show the lyrics on the poster video (on / off)', group: 'Video source' },
   sceneCount: { env: 'SCENE_COUNT', default: '4', label: 'AI scenes per song (scenes mode)', group: 'Video source' },
   sceneSeconds: { env: 'SCENE_SECONDS', default: '8', label: 'Seconds per scene before it cross-fades', group: 'Video source' },
 
