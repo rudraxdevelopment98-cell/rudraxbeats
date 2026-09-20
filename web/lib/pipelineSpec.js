@@ -77,16 +77,17 @@ export const NODES = [
     test: 'song',
     testDoes: 'Asks your wrapper for the session limit — proves the cookie is alive and shows how many credits are left.',
     howTo: {
-      title: 'Deploy your own suno-api',
+      title: 'Point this at your own suno-api',
       link: 'https://github.com/gcui-art/suno-api',
       linkLabel: 'github.com/gcui-art/suno-api',
       steps: [
-        'Open the repo above and use its “Deploy with Vercel” button.',
-        'In a browser signed in to suno.com, open DevTools (F12) → Application → Cookies → copy the whole cookie string for suno.com.',
-        'In the new Vercel project → Settings → Environment Variables → add SUNO_COOKIE with that value → Redeploy.',
-        'Paste that deployment URL below (for example https://my-suno-api.vercel.app) and leave Mode on suno-api.',
+        'Get the cookie: open suno.com/create while signed in → F12 → Network tab → refresh the page → click the newest request whose name contains "?__clerk_api_version" → Headers → Request Headers → Cookie → copy the WHOLE value (it is long and contains __client=eyJ...).',
+        'Run the wrapper where your worker runs — `docker compose up` in the suno-api folder, or `npm install && npm run dev`. It needs a real browser to answer Suno\'s captcha, which serverless hosts cannot provide, so a one-click Vercel deploy is no longer enough.',
+        'Set SUNO_COOKIE to the value you copied, plus TWOCAPTCHA_KEY (a few dollars at 2captcha.com), BROWSER=chromium and BROWSER_HEADLESS=true.',
+        'Put its address below — http://localhost:3000 is fine when it runs on the same machine as the worker, and keeps your cookie off the internet.',
+        'Press Test below: it reads your remaining Suno credits, which only works when the cookie is live.',
       ],
-      note: 'Suno has no official API — this is why a cookie is involved, and why it expires every few weeks. The dashboard warns you before a run fails.',
+      note: 'Suno has no official API. That is why a cookie and a captcha service are involved, and why the cookie dies every few weeks — the dashboard warns you before a run fails.',
     },
   },
   {

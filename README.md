@@ -183,6 +183,17 @@ The worker pulls jobs from Redis by itself — the dashboard never needs to reac
 it. The 🧪 Test button for the worker only works for a publicly hosted one.
 
 ### 5. Self-host the Suno wrapper (uses your Suno Pro)
+
+**Getting SUNO_COOKIE.** Sign in at suno.com/create → **F12** → **Network** →
+refresh → click the newest request containing **`?__clerk_api_version`** →
+**Headers → Request Headers → Cookie** → copy the whole value (a long string
+containing `__client=eyJ...`). That one header is the login.
+
+**Where to run it.** suno-api answers Suno's captcha with a real browser
+(`TWOCAPTCHA_KEY`, `BROWSER=chromium`, `BROWSER_HEADLESS=true`), which a
+serverless host cannot provide — so run it with `docker compose up` (or `npm
+run dev`) on the same machine as the worker and point the dashboard at
+`http://localhost:3000`. That also keeps the cookie off the public internet.
 1. Deploy [gcui-art/suno-api](https://github.com/gcui-art/suno-api) with its
    "Deploy with Vercel" button.
 2. Get your Suno cookie: log in to suno.com → F12 → **Network** → a
